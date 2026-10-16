@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safe launcher: dry-run is the default. This script never stores secrets.
+# Safe v3 Launcher for Arbitrum Flash Loan Arbitrage & Multi-Protocol OEV Bot
 MODE="${MODE:-dry-run}"
 BOT_FILE="${BOT_FILE:-bot/arbitrum_flash_bot.py}"
+TEST_FILE="${TEST_FILE:-tests/test_suite_v3.py}"
 
 if [[ ! -f "$BOT_FILE" ]]; then
   echo "Bot file not found: $BOT_FILE" >&2
   exit 1
 fi
 
+echo "[1/3] Running ArbitrumFlashBot v3 self-tests..."
+python3 "$BOT_FILE" --self-test
+
+if [[ -f "$TEST_FILE" ]]; then
+  echo "[2/3] Running automated unit & security test suite..."
+  python3 "$TEST_FILE"
+fi
+
 if [[ "$MODE" != "dry-run" ]]; then
-  echo "Refusing non-dry-run mode. Review and test the project independently before implementing live execution." >&2
+  echo "Refusing non-dry-run mode via default launcher. Set DRY_RUN=false in untracked .env only after fork testing."
   exit 2
 fi
 
-echo "Starting in dry-run mode. No live transactions should be broadcast."
-exec python3 "$BOT_FILE" --help
+echo "[3/3] Starting in dry-run mode. No live transactions will be broadcast."
+exec python3 "$BOT_FILE" --dry-run
