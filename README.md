@@ -2,6 +2,16 @@
 
 Research prototype for studying flash-loan arbitrage and liquidation mechanics on Arbitrum.
 
+## Architecture v3
+
+The v3 architecture introduces key updates to the platform:
+
+- **5-Mode V2/V3/Algebra Routing**: Multi-protocol execution and flexible routing across V2, V3, and Algebra DEX pools.
+- **`quotePathOnChain()` Concentrated Virtual Reserve Soft-Abort**: On-chain quoter validation checking virtual reserves to perform soft-aborts on execution if depth or slippage thresholds are breached.
+- **`BorrowerIndexer`**: Off-chain indexer for efficiently scanning and monitoring borrower account positions across protocols.
+- **Compound V3 Comet Liquidations**: Support for targeting and executing liquidations on Compound V3 Comet pools.
+- **`SINGLE_LIQUIDATION` Partial Close-Factor Fix**: Corrected close-factor logic during single liquidation calls to support partial repayments accurately.
+
 ## Project layout
 
 - `contracts/FlashLoanArbitrage.sol` — Solidity smart-contract source.
@@ -26,10 +36,3 @@ Use a dedicated Python virtual environment and install dependencies only after r
 - A successful simulation does not guarantee a live transaction will execute or be profitable.
 
 ## Validation still required
-
-Compile with the Solidity version declared in the source, run unit and integration tests on a fork/test network, validate every address, test failure cases, and obtain an independent smart-contract audit before considering mainnet execution.
-
-
-#3 Upgrade
-# vUpgrade
-3 
