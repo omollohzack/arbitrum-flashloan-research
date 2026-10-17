@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ATS MATRIX // ARBITRUM + BASE + OPTIMISM FLASH-OEV TERMINAL v3.2</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-void: #04070d;
+      --bg-panel: #070c16;
+      --bg-panel-alt: #0a1120;
+      --border-dim: #152238;
+      --border-glow: #1e3a5f;
+      --neon-green: #00ff9d;
+      --neon-cyan: #38bdf8;
+      --neon-amber: #fbbf24;
+      --neon-red: #ff3b5c;
+      --neon-purple: #a855f7;
+    }
+    * {
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      scrollbar-color: #1e3a5f #050811;
+    }
+    body {
+      margin: 0;
+      background-color: var(--bg-void);
+      color: #cbd5e1;
+      font-family: 'JetBrains Mono', monospace;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    .hud-panel {
+      background: linear-gradient(180deg, rgba(10, 17, 32, 0.92) 0%, rgba(6, 10, 19, 0.96) 100%);
+      border: 1px solid var(--border-dim);
+      box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.75);
+      position: relative;
+    }
+    .hud-panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 6px;
+      height: 6px;
+      border-top: 1px solid #38bdf8;
+      border-left: 1px solid #38bdf8;
+      pointer-events: none;
+    }
+    .hud-panel::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 6px;
+      height: 6px;
+      border-bottom: 1px solid #38bdf8;
+      border-right: 1px solid #38bdf8;
+      pointer-events: none;
+    }
+    .glow-green {
+      color: var(--neon-green);
+      text-shadow: 0 0 12px rgba(0, 255, 157, 0.45);
+    }
+    .glow-cyan {
+      color: var(--neon-cyan);
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+    .glow-amber {
+      color: var(--neon-amber);
+      text-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+    }
+    .glow-red {
+      color: var(--neon-red);
+      text-shadow: 0 0 10px rgba(255, 59, 92, 0.45);
+    }
+    .scanline-overlay {
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.012) 0px,
+        rgba(255, 255, 255, 0.012) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+    }
+    .grid-bg {
+      background-image:
+        radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 65%),
+        linear-gradient(to right, rgba(21, 34, 56, 0.3) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(21, 34, 56, 0.3) 1px, transparent 1px);
+      background-size: 100% 100%, 24px 24px, 24px 24px;
+    }
+    .pulse-dot {
+      animation: pulseGlow 1.6s infinite ease-in-out;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.88); }
+    }
+    .ticker-wrap {
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .ticker-move {
+      display: inline-block;
+      animation: tickerScroll 38s linear infinite;
+    }
+    @keyframes tickerScroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .btn-hud {
+      background: rgba(15, 27, 48, 0.85);
+      border: 1px solid #1e3a5f;
+      transition: all 0.15s ease;
+    }
+    .btn-hud:hover {
+      border-color: #38bdf8;
+      background: rgba(28, 52, 92, 0.9);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+    .btn-hud.active {
+      background: rgba(0, 255, 157, 0.14);
+      border-color: #00ff9d;
+      color: #00ff9d;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between text-[11px] leading-tight selection:bg-cyan-500 selection:text-black">
+
+  <!-- ================= TOP HEADER BAR ================= -->
+  <header class="w-full bg-[#060a12] border-b border-[#152238] px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 z-30">
+    <div class="flex items-center gap-2.5">
+      <div class="w-6 h-6 rounded bg-gradient-to-br from-blue-600 to-cyan-400 flex items-center justify-center font-extrabold text-white text-xs shadow-md shadow-cyan-500/20">
+        FO
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="font-bold tracking-wider text-cyan-400 text-xs">ATS MATRIX</span>
+        <span class="text-slate-600">//</span>
+        <span class="font-bold tracking-widest text-slate-200 text-xs">FLASH-OEV ENGINE v3.2</span>
+      </div>
+      <span id="modeBadge" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/15 border border-emerald-500/50 text-emerald-400 font-semibold flex items-center gap-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+        DRY-RUN SIMULATOR
+      </span>
+    </div>
+
+    <!-- Chain Filter & Action Controls -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <div class="flex items-center bg-[#04070d] p-0.5 rounded border border-[#152238]">
+        <button id="chainBtnAll" data-chain="ALL" class="chain-btn btn-hud active px-2 py-0.5 rounded text-[10px] font-semibold">ALL L2s</button>
+        <button id="chainBtnArb" data-chain="ARB" class="chain-btn btn-hud px-2 py-0.5 rounded text-[10px] font-semibold ml-0.5">ARBITRUM (42161)</button>
+        <button id="chainBtnBase" data-chain="BASE" class="chain-btn btn-hud px-2 py-0.5 rounded text-[10px] font-semibold ml-0.5">BASE (8453)</button>
+        <button id="chainBtnOp" data-chain="OP" class="chain-btn btn-hud px-2 py-0.5 rounded text-[10px] font-semibold ml-0.5">OPTIMISM (10)</button>
+      </div>
+
+      <button id="btnTriggerCascade" class="btn-hud px-2 py-1 rounded text-[10px] text-amber-300 border-amber-500/40 font-semibold">
+        ⚡ SIMULATE ETH -1.8% CASCADE
+      </button>
+      <button id="btnInjectIntraDex" class="btn-hud px-2 py-1 rounded text-[10px] text-cyan-300 border-cyan-500/40 font-semibold">
+        🔄 INJECT INTRA-DEX LOOP
+      </button>
+      <button id="btnToggleMode" class="btn-hud px-2 py-1 rounded text-[10px] text-emerald-300 border-emerald-500/40 font-semibold">
+        🎯 MODE: DRY-RUN
+      </button>
+      <button id="btnToggleAudio" class="btn-hud px-2 py-1 rounded text-[10px] text-slate-300 font-semibold">
+        🔇 AUDIO: OFF
+      </button>
+      <button id="btnOpenBridgeModal" class="btn-hud px-2 py-1 rounded text-[10px] text-purple-300 border-purple-500/40 font-semibold">
+        🔌 LOCAL BOT BRIDGE
+      </button>
+    </div>
+
+    <!-- Live Spot & Clock Readout -->
+    <div class="flex items-center gap-3 text-[11px]">
+      <div class="flex items-center gap-1">
+        <span class="text-slate-500">ETH/USD:</span>
+        <span id="hdrEthPrice" class="font-bold text-emerald-400">$2,650.00</span>
+        <span id="hdrEthDelta" class="text-[10px] text-emerald-400">+0.12%</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-1">
+        <span class="text-slate-500">wstETH:</span>
+        <span id="hdrWstEthPrice" class="font-bold text-cyan-300">$3,127.00</span>
+      </div>
+      <div class="hidden md:flex items-center gap-1">
+        <span class="text-slate-500">ARB:</span>
+        <span id="hdrArbPrice" class="font-bold text-slate-200">$0.852</span>
+      </div>
+      <div id="hdrClock" class="font-bold text-slate-300 bg-[#0a1222] px-2 py-0.5 rounded border border-[#152238]">
+        10:15:35 UTC
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= SUB-HEADER TELEMETRY STRIP ================= -->
+  <div class="w-full bg-[#050912] border-b border-[#121e31] px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="text-emerald-400 font-semibold">● SEQUENCER FEED: CONNECTED</span>
+      <span>SETTLED: <strong id="subSettledCount" class="text-emerald-400">342</strong></span>
+      <span>ONCHAIN_EVAL ABORTS: <strong id="subAbortedCount" class="text-amber-400">68</strong></span>
+      <span>ZOMBIE BLOCKED: <strong id="subZombieCount" class="text-rose-400">19</strong></span>
+      <span>AVG WIN PROFIT: <strong id="subAvgWin" class="text-emerald-300">+$28.45</strong></span>
+      <span>AVG ABORT GAS: <strong class="text-slate-200">$0.008 (48.2k gas)</strong></span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span>FLASH PROVIDERS: <strong class="text-cyan-300">BALANCER V2 (0%) • MORPHO BLUE (0%) • UNIV3 • AAVE V3</strong></span>
+      <span>VEGA CACHE: <strong id="subVegaLatency" class="text-emerald-400">22.7 µs (0 RPC)</strong></span>
+    </div>
+  </div>
+
+  <!-- ================= MAIN 3-TIER MATRIX LAYOUT ================= -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-1.5 p-1.5 bg-[#03060b] scanline-overlay">
+
+    <!-- ======== TOP ROW: 3 PANELS (PNL / ORDERBOOK & CANDLES / ORBIT INSPECTOR) ======== -->
+    <!-- Panel 1: All-Time P&L & Trajectory (4 cols) -->
+    <section class="hud-panel lg:col-span-4 p-2.5 flex flex-col justify-between min-h-[210px]">
+      <div>
+        <div class="flex items-center justify-between border-b border-[#142034] pb-1 mb-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+            <span class="text-[10px] font-bold tracking-wider text-slate-300 uppercase">ALL-TIME NET P&amp;L // MULTI-CHAIN OEV</span>
+          </div>
+          <span class="text-[10px] text-emerald-400 font-semibold">WIN RATE: <span id="pnlWinRate">83.4%</span></span>
+        </div>
+
+        <div class="grid grid-cols-12 gap-2 items-center">
+          <div class="col-span-6">
+            <div class="text-[10px] text-slate-400">CUMULATIVE NET PROFIT (USD)</div>
+            <div id="mainPnlDisplay" class="text-2xl sm:text-3xl font-extrabold glow-green tracking-tight my-0.5">
+              +$98,895.40
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-emerald-400 font-semibold">24H: <span id="pnl24h">+$246.80</span></span>
+              <span class="text-slate-500">|</span>
+              <span class="text-cyan-300">KES: <span id="pnlKes">12,757,506</span></span>
+            </div>
+          </div>
+
+          <div class="col-span-6 grid grid-cols-2 gap-1 text-[10px] bg-[#050a14] p-1.5 rounded border border-[#121e31]">
+            <div>
+              <div class="text-slate-500">INTRA-DEX ARB</div>
+              <div id="pnlIntraDex" class="font-bold text-emerald-400">+$34,120</div>
+            </div>
+            <div>
+              <div class="text-slate-500">MORPHO + AAVE</div>
+              <div id="pnlLiquidations" class="font-bold text-cyan-300">+$46,890</div>
+            </div>
+            <div>
+              <div class="text-slate-500">DOLOMITE PT</div>
+              <div id="pnlDolomite" class="font-bold text-amber-300">+$17,885</div>
+            </div>
+            <div>
+              <div class="text-slate-500">REVERT GAS</div>
+              <div id="pnlGasSpent" class="font-bold text-rose-400">-$18.42</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini P&L Equity Curve Canvas -->
+      <div class="mt-2">
+        <div class="flex justify-between text-[9px] text-slate-500 mb-0.5">
+          <span>EQUITY CURVE (LIVE SETTLEMENTS)</span>
+          <span id="lastSettleBadge" class="text-emerald-400">LAST: +$14.20 (ARB INTRA-UNIV3)</span>
+        </div>
+        <div class="relative h-20 w-full bg-[#040811] border border-[#121e31] rounded overflow-hidden">
+          <canvas id="pnlSparkCanvas" class="w-full h-full block"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel 2: Sequencer Feed Candlestick + DEX Depth Book (4 cols) -->
+    <section class="hud-panel lg:col-span-4 p-2.5 flex flex-col justify-between min-h-[210px]">
+      <div class="flex items-center justify-between border-b border-[#142034] pb-1 mb-1">
+        <span class="text-[10px] font-bold tracking-wider text-slate-300 uppercase">BINANCE SPOT vs L2 CHAINLINK LEAD-LAG</span>
+        <span id="leadLagStatusBadge" class="px-1.5 py-0.5 text-[9px] rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/40">
+          DELTA: -4.2 bps (SYNCED)
+        </span>
+      </div>
+
+      <div class="grid grid-cols-12 gap-2 flex-1">
+        <!-- Live Micro-Candlestick Chart -->
+        <div class="col-span-7 flex flex-col justify-between">
+          <div class="relative h-28 w-full bg-[#040811] border border-[#121e31] rounded overflow-hidden">
+            <canvas id="candleCanvas" class="w-full h-full block"></canvas>
+          </div>
+          <div class="grid grid-cols-3 gap-1 mt-1 text-[9px] bg-[#050a14] p-1 rounded border border-[#121e31]">
+            <div>
+              <span class="text-slate-500">CEX SPOT:</span>
+              <span id="cexSpotVal" class="text-emerald-400 font-bold block">$2,650.00</span>
+            </div>
+            <div>
+              <span class="text-slate-500">CHAINLINK:</span>
+              <span id="chainlinkVal" class="text-cyan-300 font-bold block">$2,651.10</span>
+            </div>
+            <div>
+              <span class="text-slate-500">TRIGGER:</span>
+              <span class="text-amber-300 font-bold block">&le; -15.0 bps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Concentrated Liquidity Virtual Reserve Book -->
+        <div class="col-span-5 flex flex-col justify-between bg-[#040811] border border-[#121e31] rounded p-1.5 text-[9px]">
+          <div class="flex justify-between text-slate-500 border-b border-[#121e31] pb-0.5">
+            <span>POOL / FEE</span>
+            <span>SPOT</span>
+            <span>vLIQ</span>
+          </div>
+          <div id="orderbookRows" class="space-y-1 my-1 font-mono">
+            <!-- Populated by JS -->
+          </div>
+          <div class="border-t border-[#121e31] pt-1 flex justify-between items-center text-[9px]">
+            <span class="text-slate-400">MMBF SPREAD:</span>
+            <span id="mmbfSpreadVal" class="font-bold text-emerald-400">+19.4 bps</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel 3: Orbit Inspector — Flash & Liquidation Engine (4 cols) -->
+    <section class="hud-panel lg:col-span-4 p-2.5 flex flex-col justify-between min-h-[210px]">
+      <div class="flex items-center justify-between border-b border-[#142034] pb-1 mb-1">
+        <span class="text-[10px] font-bold tracking-wider text-slate-300 uppercase">ORBIT INSPECTOR // VEGA STRIKE CACHE</span>
+        <span class="text-[9px] text-amber-300">7 ETH-BETA ASSETS MONITORED</span>
+      </div>
+
+      <!-- Monitored Borrower Strike Price Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-[9.5px]">
+          <thead>
+            <tr class="text-slate-500 border-b border-[#121e31]">
+              <th class="pb-1">PROTOCOL</th>
+              <th class="pb-1">COLLAT</th>
+              <th class="pb-1">DEBT</th>
+              <th class="pb-1">STRIKE ($)</th>
+              <th class="pb-1">HF</th>
+              <th class="pb-1 text-right">EST BONUS</th>
+            </tr>
+          </thead>
+          <tbody id="vegaBorrowerRows" class="divide-y divide-[#0f1929]">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Bottom status metrics of Orbit Inspector -->
+      <div class="grid grid-cols-3 gap-1.5 mt-1.5 pt-1.5 border-t border-[#142034] text-[9.5px]">
+        <div class="bg-[#050a14] p-1.5 rounded border border-[#121e31]">
+          <div class="text-slate-500">BISECTION SIZER</div>
+          <div id="bisectionOptimalLoan" class="font-bold text-cyan-300">$1,420.50 USDC</div>
+          <div class="text-[8.5px] text-slate-500">d(&Delta;y)/d(&Delta;x) = 1.000</div>
+        </div>
+        <div class="bg-[#050a14] p-1.5 rounded border border-[#121e31]">
+          <div class="text-slate-500">L1+L2 NODE GAS</div>
+          <div id="nodeGasEst" class="font-bold text-emerald-400">$0.046 / tx</div>
+          <div class="text-[8.5px] text-slate-500">NodeInterface 0x..C8</div>
+        </div>
+        <div class="bg-[#050a14] p-1.5 rounded border border-[#121e31]">
+          <div class="text-slate-500">ZOMBIE FILTER</div>
+          <div class="font-bold text-amber-300">ACTIVE (&ge;2.5x)</div>
+          <div class="text-[8.5px] text-rose-400">sdeUSD / USR blocked</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== MIDDLE ROW: 3D HOLOGRAPHIC TORUS MANIFOLD & CALLOUTS (12 cols) ======== -->
+    <section class="hud-panel lg:col-span-12 grid-bg relative min-h-[340px] sm:min-h-[380px] flex flex-col justify-between p-2.5 overflow-hidden">
+      <!-- Top overlay header inside the torus arena -->
+      <div class="flex flex-wrap items-center justify-between gap-2 z-20 pointer-events-none">
+        <div class="flex items-center gap-2 bg-[#050a14]/90 px-2.5 py-1 rounded border border-[#152238]">
+          <span class="w-2 h-2 rounded-full bg-cyan-400 pulse-dot"></span>
+          <span class="text-[10px] font-bold tracking-widest text-cyan-300">
+            NEURAL SHELL // LINE-GRAPH L(G) MMBF &amp; VEGA STRIKE TORUS MANIFOLD
+          </span>
+        </div>
+        <div class="flex items-center gap-2 pointer-events-auto">
+          <span class="text-[9.5px] text-slate-400 bg-[#050a14]/90 px-2 py-1 rounded border border-[#152238]">
+            DRAG TO ROTATE 3D SHELL • SCROLL TO ZOOM
+          </span>
+          <button id="btnResetCamera" class="btn-hud px-2 py-1 rounded text-[9.5px] text-slate-300">
+            RESET VIEW
+          </button>
+        </div>
+      </div>
+
+      <!-- Center 3D Torus Canvas + SVG Callout Lines -->
+      <div class="absolute inset-0 flex items-center justify-center">
+        <canvas id="torusCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+      </div>
+
+      <!-- Left & Right Floating Telemetry Callout Stacks (like the video) -->
+      <div class="relative z-20 grid grid-cols-1 md:grid-cols-12 gap-2 my-auto pointer-events-none">
+        <!-- Left Callout Stack -->
+        <div class="md:col-span-3 space-y-2 flex flex-col justify-center">
+          <div class="bg-[#050a14]/90 border-l-2 border-emerald-400 p-2 rounded-r border border-[#152238]">
+            <div class="flex justify-between text-[9px] text-slate-400">
+              <span>LINE-GRAPH MMBF ENGINE</span>
+              <span class="text-emerald-400">ACTIVE</span>
+            </div>
+            <div id="hudActiveRoute" class="text-xs font-bold text-slate-100 mt-0.5">
+              USDC &rarr; WETH(UniV3) &rarr; ARB(Algebra) &rarr; USDC
+            </div>
+            <div class="flex justify-between text-[9.5px] mt-1">
+              <span class="text-slate-400">OPTIMAL LOAN: <strong id="hudOptLoan" class="text-cyan-300">$1,840</strong></span>
+              <span class="text-emerald-400 font-bold" id="hudOptProfit">+$6.84 NET</span>
+            </div>
+          </div>
+
+          <div class="bg-[#050a14]/90 border-l-2 border-cyan-400 p-2 rounded-r border border-[#152238]">
+            <div class="flex justify-between text-[9px] text-slate-400">
+              <span>MORPHO BLUE CALLBACK (0x6c24..8F5e)</span>
+              <span class="text-cyan-300">0% FEE</span>
+            </div>
+            <div class="text-xs font-bold text-slate-100 mt-0.5">
+              onMorphoLiquidate() Zero-Flash Mode
+            </div>
+            <div class="text-[9.5px] text-slate-400 mt-0.5">
+              Saves <strong class="text-emerald-400">~90,000 gas</strong> by seizing collateral prior to debt repayment
+            </div>
+          </div>
+
+          <div class="bg-[#050a14]/90 border-l-2 border-amber-400 p-2 rounded-r border border-[#152238]">
+            <div class="flex justify-between text-[9px] text-slate-400">
+              <span>ROUTE-CONFINED ONCHAIN_EVAL</span>
+              <span class="text-amber-300">WU &amp; ÖZ (2026)</span>
+            </div>
+            <div class="text-xs font-bold text-slate-100 mt-0.5">
+              quotePathOnChain() Guard Enabled
+            </div>
+            <div class="text-[9.5px] text-slate-400 mt-0.5">
+              Cuts stale-probe gas by <strong class="text-amber-300">-86.9%</strong> (352k &rarr; 46.2k gas)
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Spacer for 3D Torus -->
+        <div class="hidden md:block md:col-span-6"></div>
+
+        <!-- Right Callout Stack (Live Route Nodes & Chain Spreads) -->
+        <div class="md:col-span-3 space-y-1.5 flex flex-col justify-center">
+          <div class="bg-[#050a14]/90 border-r-2 border-emerald-400 p-2 rounded-l border border-[#152238]">
+            <div class="flex justify-between items-center">
+              <span class="text-[9px] text-slate-400">ARBITRUM ONE (42161)</span>
+              <span class="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-bold">250ms BLOCK</span>
+            </div>
+            <div class="flex justify-between items-baseline mt-1">
+              <span class="text-[10px] text-slate-300">UniV3 0.01% &harr; 0.05%</span>
+              <span id="rightSpreadArb" class="text-xs font-bold glow-green">+$12.40</span>
+            </div>
+          </div>
+
+          <div class="bg-[#050a14]/90 border-r-2 border-cyan-400 p-2 rounded-l border border-[#152238]">
+            <div class="flex justify-between items-center">
+              <span class="text-[9px] text-slate-400">BASE MAINNET (8453)</span>
+              <span class="px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded text-[9px] font-bold">MORPHO + AAVE</span>
+            </div>
+            <div class="flex justify-between items-baseline mt-1">
+              <span class="text-[10px] text-slate-300">cbETH / wstETH Cascade</span>
+              <span id="rightSpreadBase" class="text-xs font-bold glow-cyan">+$38.90</span>
+            </div>
+          </div>
+
+          <div class="bg-[#050a14]/90 border-r-2 border-amber-400 p-2 rounded-l border border-[#152238]">
+            <div class="flex justify-between items-center">
+              <span class="text-[9px] text-slate-400">DOLOMITE + PENDLE PT</span>
+              <span class="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] font-bold">8.0% BONUS</span>
+            </div>
+            <div class="flex justify-between items-baseline mt-1">
+              <span class="text-[10px] text-slate-300">PT-weETH / PT-ezETH Unwrap</span>
+              <span id="rightSpreadPt" class="text-xs font-bold glow-amber">+$64.20</span>
+            </div>
+          </div>
+
+          <div class="bg-[#050a14]/90 border-r-2 border-purple-400 p-2 rounded-l border border-[#152238]">
+            <div class="flex justify-between items-center">
+              <span class="text-[9px] text-slate-400">FLUID DEX V2 RESOLVER</span>
+              <span class="px-1.5 py-0.2 bg-purple-500/20 text-purple-300 rounded text-[9px] font-bold">0.005% FEE</span>
+            </div>
+            <div class="flex justify-between items-baseline mt-1">
+              <span class="text-[10px] text-slate-300">weETH &harr; WETH Smart Debt</span>
+              <span id="rightSpreadFluid" class="text-xs font-bold text-purple-300">+$9.15</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Torus Status Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-2 z-20 pt-1 border-t border-[#152238]/80 text-[9.5px] text-slate-400">
+        <div>
+          TORUS VERTICES: <strong class="text-cyan-300">2,400 POOL &amp; BORROWER NODES</strong> • SPIKE AMPLITUDE = REAL-TIME MARGINAL SPREAD
+        </div>
+        <div id="torusEventStatus" class="text-emerald-400 font-semibold">
+          ● SCANNING 14 TOKENS ACROSS ARBITRUM, BASE &amp; OPTIMISM...
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== BOTTOM ROW: EXECUTION TAPE (6 cols) & RESOLUTION FUNNEL (6 cols) ======== -->
+    <!-- Bottom Left: Execution Tape (Time & Sales) -->
+    <section class="hud-panel lg:col-span-6 p-2.5 flex flex-col justify-between min-h-[235px]">
+      <div>
+        <div class="flex flex-wrap items-center justify-between gap-1 border-b border-[#142034] pb-1 mb-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-[10px] font-bold tracking-wider text-slate-300 uppercase">
+              EXECUTION TAPE // TIME &amp; SALES — FLASH SWAPS, LIQUIDATIONS &amp; ABORTS
+            </span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button data-tapefilter="ALL" class="tape-filter-btn btn-hud active px-1.5 py-0.5 rounded text-[9px]">ALL</button>
+            <button data-tapefilter="ARB_SWAP" class="tape-filter-btn btn-hud px-1.5 py-0.5 rounded text-[9px]">INTRA-DEX</button>
+            <button data-tapefilter="LIQ" class="tape-filter-btn btn-hud px-1.5 py-0.5 rounded text-[9px]">LIQUIDATIONS</button>
+            <button data-tapefilter="ABORT" class="tape-filter-btn btn-hud px-1.5 py-0.5 rounded text-[9px]">ONCHAIN_EVAL</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto max-h-[185px] overflow-y-auto">
+          <table class="w-full text-left text-[9.5px] font-mono">
+            <thead class="sticky top-0 bg-[#070c16] text-slate-500 border-b border-[#142034]">
+              <tr>
+                <th class="py-1">TIME</th>
+                <th class="py-1">CHAIN</th>
+                <th class="py-1">ENGINE / ROUTE</th>
+                <th class="py-1">FLASH LOAN</th>
+                <th class="py-1">GAS</th>
+                <th class="py-1">STATUS</th>
+                <th class="py-1 text-right">NET P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody id="executionTapeBody" class="divide-y divide-[#0e1726]">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom Right: Resolution Funnel (0ms -> 250ms Block Settlement) -->
+    <section class="hud-panel lg:col-span-6 p-2.5 flex flex-col justify-between min-h-[235px]">
+      <div class="flex flex-wrap items-center justify-between gap-1 border-b border-[#142034] pb-1 mb-1">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+          <span class="text-[10px] font-bold tracking-wider text-slate-300 uppercase">
+            RESOLUTION FUNNEL // 0ms SEQUENCER FEED TO 250ms BLOCK SETTLEMENT
+          </span>
+        </div>
+        <div class="flex items-center gap-3 text-[9px]">
+          <span class="text-emerald-400">━ SETTLED CAPTURE</span>
+          <span class="text-cyan-300">━ PRE-SIGNED LEAD-LAG</span>
+          <span class="text-rose-400">━ quotePathOnChain() ABORT</span>
+        </div>
+      </div>
+
+      <div class="relative flex-1 min-h-[165px] w-full bg-[#040811] border border-[#121e31] rounded overflow-hidden">
+        <canvas id="funnelCanvas" class="w-full h-full block"></canvas>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between text-[9.5px] text-slate-400 mt-1 pt-1 border-t border-[#142034]">
+        <span>T+0ms: Sequencer WS / Binance Tick</span>
+        <span>T+0.025ms: Vega Cache + Bisection</span>
+        <span>T+45ms: Multicall3</span>
+        <span class="text-emerald-400 font-semibold">T+250ms: L2 Block Finality</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= BOTTOM SCROLLING TICKER TAPE ================= -->
+  <footer class="w-full bg-[#050811] border-t border-[#152238] py-1 px-2 text-[10px] ticker-wrap z-30">
+    <div id="bottomTickerContent" class="ticker-move space-x-8">
+      <span class="text-emerald-400 font-semibold">[ARB #28491042] INTRA-UNIV3 (0.05%&rarr;0.30%) LOAN $1,420 USDC &rarr; NET +$4.82</span>
+      <span class="text-cyan-300 font-semibold">[BASE #19482110] MORPHO BLUE onMorphoLiquidate() wstETH/USDC &rarr; NET +$142.10 (0 FLASH FEE)</span>
+      <span class="text-amber-300 font-semibold">[ARB #28491049] DOLOMITE PT-weETH UNWRAP LIQUIDATION &rarr; NET +$318.94 (8.0% BONUS)</span>
+      <span class="text-slate-400">[OP #12840192] quotePathOnChain() EARLY ABORT &rarr; SAVED 304,000 GAS ($0.008 COST)</span>
+      <span class="text-rose-400">[ARB #28491055] ZOMBIE MARKET REJECTED: sdeUSD/USDC (DEX EXIT LIQ &lt; 2.5x DEBT)</span>
+      <span class="text-purple-300 font-semibold">[ARB #28491061] FLUID DEX V2 (0.005% FEE) + CAMELOT V3 ALGEBRA 3-HOP &rarr; NET +$19.65</span>
+      <span class="text-emerald-400 font-semibold">[ARB #28491042] INTRA-UNIV3 (0.05%&rarr;0.30%) LOAN $1,420 USDC &rarr; NET +$4.82</span>
+      <span class="text-cyan-300 font-semibold">[BASE #19482110] MORPHO BLUE onMorphoLiquidate() wstETH/USDC &rarr; NET +$142.10 (0 FLASH FEE)</span>
+    </div>
+  </footer>
+
+  <!-- ================= LOCAL BOT WEBSOCKET / JSON BRIDGE MODAL ================= -->
+  <div id="bridgeModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="hud-panel max-w-lg w-full p-4 rounded border border-cyan-500/50 bg-[#070d19]">
+      <div class="flex items-center justify-between border-b border-[#152238] pb-2 mb-3">
+        <h3 class="text-xs font-bold text-cyan-300 tracking-wider uppercase">
+          🔌 CONNECT LIVE PYTHON v3.2 BOT (`arbitrum_flash_bot.py`)
+        </h3>
+        <button id="btnCloseBridgeModal" class="text-slate-400 hover:text-white text-sm font-bold px-1">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-[11px] text-slate-300">
+        <p class="text-slate-400 leading-relaxed">
+          This HUD runs your exact <strong>v3.2 Line-Graph MMBF, Bisection Sizer, and VegaStrikePriceCache</strong> math natively in-browser, and can also stream live telemetry from your running <code class="text-cyan-300">arbitrum_flash_bot.py</code> process via WebSocket or JSON log paste.
+        </p>
+
+        <div>
+          <label class="block text-[10px] text-slate-400 mb-1">LOCAL / VPS WEBSOCKET ENDPOINT</label>
+          <div class="flex gap-2">
+            <input id="wsEndpointInput" type="text" value="ws://127.0.0.1:8765" class="flex-1 bg-[#04070d] border border-[#1e3a5f] rounded px-2.5 py-1.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-400" />
+            <button id="btnConnectWs" class="btn-hud px-3 py-1.5 rounded text-xs font-semibold text-emerald-300 border-emerald-500/50">
+              CONNECT WS
+            </button>
+          </div>
+          <div id="wsConnectFeedback" class="text-[10px] text-slate-500 mt-1">
+            Status: Using built-in v3.2 real-time simulation engine (60 FPS).
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] text-slate-400 mb-1">OR PASTE LIVE BOT LOG LINE / JSON TELEMETRY TO INJECT</label>
+          <textarea id="jsonLogInput" rows="3" placeholder='{"chain":"ARB","type":"LIQ","route":"Morpho wstETH->USDC","loan":6570,"profit":390.39}' class="w-full bg-[#04070d] border border-[#1e3a5f] rounded p-2 text-[10px] text-slate-200 font-mono focus:outline-none focus:border-cyan-400"></textarea>
+          <div class="flex justify-end gap-2 mt-2">
+            <button id="btnInjectCustomJson" class="btn-hud px-3 py-1 rounded text-[10px] text-cyan-300 font-semibold">
+              INJECT TELEMETRY EVENT
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= APPLICATION JAVASCRIPT ================= -->
+  <script>
+    (function () {
+      // ---------- 1. APPLICATION STATE ----------
+      const state = {
+        selectedChain: 'ALL',
+        tapeFilter: 'ALL',
+        isLiveMode: false,
+        audioEnabled: false,
+        ethPrice: 2650.00,
+        cexSpotPrice: 2650.00,
+        chainlinkPrice: 2650.80,
+        allTimePnl: 98895.40,
+        pnl24h: 246.80,
+        pnlIntraDex: 34120.00,
+        pnlLiquidations: 46890.00,
+        pnlDolomite: 17885.40,
+        pnlGasSpent: 18.42,
+        settledCount: 342,
+        abortedCount: 68,
+        zombieCount: 19,
+        pnlHistory: [],
+        candles: [],
+        tapeEvents: [],
+        funnelTrajectories: [],
+        torusRotX: 0.52,
+        torusRotY: 0.0,
+        torusZoom: 1.0,
+        spikePulse: 0.0
+      };
+
+      // Seed initial PnL equity curve
+      let baseP = 98450;
+      for (let i = 0; i < 60; i++) {
+        baseP += (Math.random() * 12 - 1.5);
+        state.pnlHistory.push(baseP);
+      }
+      state.pnlHistory.push(state.allTimePnl);
+
+      // Seed initial candlesticks
+      let cPrice = 2650.0;
+      for (let i = 0; i < 36; i++) {
+        const open = cPrice;
+        const close = open + (Math.random() - 0.49) * 4.5;
+        const high = Math.max(open, close) + Math.random() * 2.2;
+        const low = Math.min(open, close) - Math.random() * 2.2;
+        state.candles.push({ open, high, low, close });
+        cPrice = close;
+      }
+      state.ethPrice = cPrice;
+      state.cexSpotPrice = cPrice;
+      state.chainlinkPrice = cPrice + 0.65;
+
+      // Borrower positions in VegaStrikePriceCache
+      const borrowers = [
+        { protocol: 'MORPHO_BLUE', chain: 'ARB', collat: 'wstETH', debt: 'USDC', collatAmt: 2.5, debtUsd: 6570.13, lltv: 0.86, ratio: 1.18, bonus: '6.0%', zombie: false },
+        { protocol: 'AAVE_V3', chain: 'ARB', collat: 'WETH', debt: 'USDC', collatAmt: 4.0, debtUsd: 8531.70, lltv: 0.825, ratio: 1.00, bonus: '5.0%', zombie: false },
+        { protocol: 'DOLOMITE', chain: 'ARB', collat: 'PT-weETH', debt: 'USDC', collatAmt: 3.2, debtUsd: 7180.00, lltv: 0.85, ratio: 1.05, bonus: '8.0%', zombie: false },
+        { protocol: 'MORPHO_BLUE', chain: 'BASE', collat: 'cbETH', debt: 'USDC', collatAmt: 1.8, debtUsd: 4290.00, lltv: 0.86, ratio: 1.08, bonus: '6.0%', zombie: false },
+        { protocol: 'AAVE_V3', chain: 'OP', collat: 'rETH', debt: 'USDT', collatAmt: 1.4, debtUsd: 3390.00, lltv: 0.825, ratio: 1.12, bonus: '5.0%', zombie: false },
+        { protocol: 'MORPHO_BLUE', chain: 'ARB', collat: 'sdeUSD', debt: 'USDC', collatAmt: 50000, debtUsd: 45000, lltv: 0.86, ratio: 1.00, bonus: 'ZOMBIE', zombie: true }
+      ];
+
+      // Seed initial execution tape rows
+      const initialTape = [
+        { time: '10:15:31', chain: 'ARB', type: 'ARB_SWAP', route: 'UniV3(0.05%)->Algebra->CamelotV2', loan: '$1,420', gas: '$0.045', status: 'SETTLED', pnl: 6.84 },
+        { time: '10:15:28', chain: 'BASE', type: 'LIQ', route: 'Morpho onMorphoLiquidate cbETH/USDC', loan: '$2,145', gas: '$0.031', status: 'PRE-SIGNED', pnl: 112.40 },
+        { time: '10:15:24', chain: 'ARB', type: 'ABORT', route: 'quotePathOnChain() WETH/GMX/USDC', loan: '$3,200', gas: '$0.008', status: 'ABORTED', pnl: -0.008 },
+        { time: '10:15:19', chain: 'ARB', type: 'LIQ', route: 'Dolomite PT-weETH Unwrap -> USDC', loan: '$5,000', gas: '$0.058', status: 'SETTLED', pnl: 318.94 },
+        { time: '10:15:14', chain: 'OP', type: 'ARB_SWAP', route: 'Intra-UniV3 (0.01% <-> 0.05% WETH)', loan: '$4,850', gas: '$0.039', status: 'SETTLED', pnl: 14.22 },
+        { time: '10:15:09', chain: 'ARB', type: 'ARB_SWAP', route: 'FluidDEX(0.005%)->UniV3 weETH/WETH', loan: '$8,100', gas: '$0.044', status: 'SETTLED', pnl: 19.65 }
+      ];
+      state.tapeEvents = initialTape;
+
+      // ---------- 2. SYNTHESIZED WEB AUDIO HUD SOUND ----------
+      let audioCtx = null;
+      function playHudTone(freq, durationMs, type) {
+        if (!state.audioEnabled) return;
+        try {
+          if (!audioCtx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContextClass();
+          }
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = type || 'sine';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + durationMs / 1000);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + durationMs / 1000);
+        } catch (e) {}
+      }
+
+      // ---------- 3. RENDER TABLES & DOM TELEMETRY ----------
+      function formatUsd(val) {
+        const sign = val >= 0 ? '+' : '-';
+        return sign + '$' + Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function renderOrderbook() {
+        const pools = [
+          { name: 'UniV3 0.05%', mult: 1.0000, liq: '$4.2M', color: 'text-emerald-400' },
+          { name: 'Camelot Algebra', mult: 1.0014, liq: '$1.8M', color: 'text-cyan-300' },
+          { name: 'Fluid DEX 0.005%', mult: 0.9996, liq: '$6.5M', color: 'text-purple-300' },
+          { name: 'UniV3 0.30%', mult: 1.0021, liq: '$2.9M', color: 'text-emerald-300' },
+          { name: 'Camelot V2 Dir', mult: 0.9987, liq: '$940K', color: 'text-amber-300' }
+        ];
+        const container = document.getElementById('orderbookRows');
+        if (!container) return;
+        container.innerHTML = pools.map(p => {
+          const pr = (state.ethPrice * p.mult).toFixed(2);
+          return `<div class="flex justify-between items-center">
+            <span class="${p.color} truncate pr-1">${p.name}</span>
+            <span class="text-slate-200 font-semibold">$${pr}</span>
+            <span class="text-slate-400">${p.liq}</span>
+          </div>`;
+        }).join('');
+      }
+
+      function renderVegaTable() {
+        const tbody = document.getElementById('vegaBorrowerRows');
+        if (!tbody) return;
+        const filtered = borrowers.filter(b => state.selectedChain === 'ALL' || b.chain === state.selectedChain);
+        tbody.innerHTML = filtered.map(b => {
+          if (b.zombie) {
+            return `<tr class="text-rose-400/80">
+              <td class="py-1 font-semibold">${b.protocol} <span class="text-[8px] px-1 bg-rose-500/20 rounded">${b.chain}</span></td>
+              <td class="py-1">${b.collat}</td>
+              <td class="py-1">$${b.debtUsd.toLocaleString()}</td>
+              <td class="py-1">STALE</td>
+              <td class="py-1 font-bold">0.892</td>
+              <td class="py-1 text-right font-bold text-rose-400">BLOCKED (ZOMBIE)</td>
+            </tr>`;
+          }
+          const strike = b.debtUsd / (b.collatAmt * b.ratio * b.lltv);
+          const hf = (b.collatAmt * b.ratio * state.ethPrice * b.lltv) / b.debtUsd;
+          const hfColor = hf < 1.0 ? 'text-rose-400 font-extrabold animate-pulse' : (hf < 1.03 ? 'text-amber-300 font-bold' : 'text-emerald-400');
+          return `<tr>
+            <td class="py-1 text-slate-200 font-semibold">${b.protocol} <span class="text-[8px] px-1 bg-slate-800 text-cyan-300 rounded">${b.chain}</span></td>
+            <td class="py-1 text-cyan-300">${b.collat}</td>
+            <td class="py-1 text-slate-300">$${b.debtUsd.toLocaleString()}</td>
+            <td class="py-1 text-amber-300 font-semibold">$${strike.toFixed(2)}</td>
+            <td class="py-1 ${hfColor}">${hf.toFixed(3)}</td>
+            <td class="py-1 text-right text-emerald-400 font-bold">${b.bonus}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      function renderExecutionTape() {
+        const tbody = document.getElementById('executionTapeBody');
+        if (!tbody) return;
+        const rows = state.tapeEvents.filter(ev => {
+          const chainOk = state.selectedChain === 'ALL' || ev.chain === state.selectedChain;
+          const typeOk = state.tapeFilter === 'ALL' || ev.type === state.tapeFilter;
+          return chainOk && typeOk;
+        });
+
+        tbody.innerHTML = rows.slice(0, 14).map(ev => {
+          const isAbort = ev.status === 'ABORTED';
+          const statusClass = ev.status === 'PRE-SIGNED'
+            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            : (isAbort ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40');
+          const pnlClass = ev.pnl >= 0 ? 'text-emerald-400 font-bold' : 'text-amber-400';
+          return `<tr class="hover:bg-slate-900/60">
+            <td class="py-1 text-slate-400">${ev.time}</td>
+            <td class="py-1"><span class="px-1 py-0.2 bg-slate-800 text-cyan-300 rounded text-[8.5px] font-bold">${ev.chain}</span></td>
+            <td class="py-1 text-slate-200 truncate max-w-[170px]">${ev.route}</td>
+            <td class="py-1 text-slate-300">${ev.loan}</td>
+            <td class="py-1 text-slate-400">${ev.gas}</td>
+            <td class="py-1"><span class="px-1.5 py-0.2 rounded text-[8.5px] ${statusClass}">${ev.status}</span></td>
+            <td class="py-1 text-right ${pnlClass}">${formatUsd(ev.pnl)}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      function updateHeaderAndCounters() {
+        document.getElementById('mainPnlDisplay').textContent = formatUsd(state.allTimePnl);
+        document.getElementById('pnl24h').textContent = formatUsd(state.pnl24h);
+        document.getElementById('pnlKes').textContent = Math.round(state.allTimePnl * 129).toLocaleString('en-US');
+        document.getElementById('pnlIntraDex').textContent = '+$' + Math.round(state.pnlIntraDex).toLocaleString('en-US');
+        document.getElementById('pnlLiquidations').textContent = '+$' + Math.round(state.pnlLiquidations).toLocaleString('en-US');
+        document.getElementById('pnlDolomite').textContent = '+$' + Math.round(state.pnlDolomite).toLocaleString('en-US');
+        document.getElementById('pnlGasSpent').textContent = '-$' + state.pnlGasSpent.toFixed(2);
+        document.getElementById('subSettledCount').textContent = state.settledCount;
+        document.getElementById('subAbortedCount').textContent = state.abortedCount;
+        document.getElementById('subZombieCount').textContent = state.zombieCount;
+        const winRate = (state.settledCount / (state.settledCount + state.abortedCount)) * 100;
+        document.getElementById('pnlWinRate').textContent = winRate.toFixed(1) + '%';
+
+        document.getElementById('hdrEthPrice').textContent = '$' + state.ethPrice.toFixed(2);
+        document.getElementById('hdrWstEthPrice').textContent = '$' + (state.ethPrice * 1.18).toFixed(2);
+        document.getElementById('cexSpotVal').textContent = '$' + state.cexSpotPrice.toFixed(2);
+        document.getElementById('chainlinkVal').textContent = '$' + state.chainlinkPrice.toFixed(2);
+
+        const deltaBps = ((state.cexSpotPrice - state.chainlinkPrice) / state.chainlinkPrice) * 10000;
+        const badge = document.getElementById('leadLagStatusBadge');
+        if (deltaBps <= -15.0) {
+          badge.textContent = `⚡ LEAD-LAG: ${deltaBps.toFixed(1)} bps (PRE-SIGNING!)`;
+          badge.className = 'px-1.5 py-0.5 text-[9px] rounded bg-amber-500/20 text-amber-300 border border-amber-400 font-bold animate-pulse';
+        } else {
+          badge.textContent = `DELTA: ${deltaBps.toFixed(1)} bps (SYNCED)`;
+          badge.className = 'px-1.5 py-0.5 text-[9px] rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/40';
+        }
+      }
+
+      // ---------- 4. 3D HOLOGRAPHIC PARTICLE TORUS RENDERER ----------
+      const torusCanvas = document.getElementById('torusCanvas');
+      const torusCtx = torusCanvas.getContext('2d');
+      const torusParticles = [];
+
+      // Create 1,650 torus surface particles + 140 radial liquidity spike filaments
+      const uSteps = 55;
+      const vSteps = 30;
+      for (let i = 0; i < uSteps; i++) {
+        const u = (i / uSteps) * Math.PI * 2;
+        for (let j = 0; j < vSteps; j++) {
+          const v = (j / vSteps) * Math.PI * 2;
+          const isSpike = Math.random() < 0.095;
+          const colorType = Math.random();
+          torusParticles.push({
+            u,
+            v,
+            isSpike,
+            spikeLen: isSpike ? (18 + Math.random() * 44) : 0,
+            color: colorType > 0.82 ? '#00ff9d' : (colorType > 0.55 ? '#fbbf24' : '#38bdf8'),
+            size: isSpike ? 1.9 : 1.25
+          });
+        }
+      }
+
+      // Mouse drag rotation & wheel zoom on Torus
+      let isDragging = false;
+      let prevMouseX = 0;
+      let prevMouseY = 0;
+      torusCanvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+      window.addEventListener('mouseup', () => { isDragging = false; });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - prevMouseX;
+        const dy = e.clientY - prevMouseY;
+        state.torusRotY += dx * 0.007;
+        state.torusRotX = Math.max(-1.2, Math.min(1.2, state.torusRotX + dy * 0.007));
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+      torusCanvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        state.torusZoom = Math.max(0.65, Math.min(1.55, state.torusZoom - e.deltaY * 0.001));
+      }, { passive: false });
+
+      function drawTorus() {
+        const w = torusCanvas.width;
+        const h = torusCanvas.height;
+        torusCtx.clearRect(0, 0, w, h);
+
+        const cx = w / 2;
+        const cy = h / 2;
+        const scale = Math.min(w, h) * 0.25 * state.torusZoom;
+        const R = scale * 1.15; // Major radius
+        const r = scale * 0.46; // Minor radius
+
+        state.torusRotY += 0.0065;
+        state.spikePulse = Math.max(0, state.spikePulse * 0.94);
+
+        const cosX = Math.cos(state.torusRotX);
+        const sinX = Math.sin(state.torusRotX);
+        const cosY = Math.cos(state.torusRotY);
+        const sinY = Math.sin(state.torusRotY);
+
+        const projected = [];
+        for (let i = 0; i < torusParticles.length; i++) {
+          const p = torusParticles[i];
+          const cosU = Math.cos(p.u);
+          const sinU = Math.sin(p.u);
+          const cosV = Math.cos(p.v);
+          const sinV = Math.sin(p.v);
+
+          const baseX = (R + r * cosV) * cosU;
+          const baseY = (R + r * cosV) * sinU;
+          const baseZ = r * sinV;
+
+          // Rotate Y then Rotate X
+          const x1 = baseX * cosY - baseZ * sinY;
+          const z1 = baseX * sinY + baseZ * cosY;
+          const y2 = baseY * cosX - z1 * sinX;
+          const z2 = baseY * sinX + z1 * cosX;
+
+          const fov = 520;
+          const persp = fov / (fov + z2 + 260);
+          const sx = cx + x1 * persp;
+          const sy = cy + y2 * persp;
+
+          let ex = sx;
+          let ey = sy;
+          if (p.isSpike) {
+            const extraBoost = 1 + state.spikePulse * 1.35;
+            const outR = r + p.spikeLen * extraBoost;
+            const spX = (R + outR * cosV) * cosU;
+            const spY = (R + outR * cosV) * sinU;
+            const spZ = outR * sinV;
+            const sx1 = spX * cosY - spZ * sinY;
+            const sz1 = spX * sinY + spZ * cosY;
+            const sy2 = spY * cosX - sz1 * sinX;
+            const sz2 = spY * sinX + sz1 * cosX;
+            const spPersp = fov / (fov + sz2 + 260);
+            ex = cx + sx1 * spPersp;
+            ey = cy + sy2 * spPersp;
+          }
+
+          projected.push({ sx, sy, ex, ey, z: z2, p, persp });
+        }
+
+        projected.sort((a, b) => b.z - a.z);
+
+        for (let i = 0; i < projected.length; i++) {
+          const item = projected[i];
+          const alpha = Math.max(0.15, Math.min(0.95, (item.persp - 0.45) * 1.8));
+          if (item.p.isSpike) {
+            torusCtx.strokeStyle = item.p.color;
+            torusCtx.globalAlpha = alpha * 0.72;
+            torusCtx.lineWidth = 1.0;
+            torusCtx.beginPath();
+            torusCtx.moveTo(item.sx, item.sy);
+            torusCtx.lineTo(item.ex, item.ey);
+            torusCtx.stroke();
+
+            torusCtx.fillStyle = '#ffffff';
+            torusCtx.globalAlpha = alpha;
+            torusCtx.fillRect(item.ex - 1, item.ey - 1, 2.2, 2.2);
+          }
+
+          torusCtx.fillStyle = item.p.color;
+          torusCtx.globalAlpha = alpha;
+          const sz = item.p.size * item.persp;
+          torusCtx.fillRect(item.sx - sz / 2, item.sy - sz / 2, sz, sz);
+        }
+        torusCtx.globalAlpha = 1.0;
+      }
+
+      // ---------- 5. SPARKLINE, CANDLESTICK & FUNNEL RENDERERS ----------
+      const pnlCanvas = document.getElementById('pnlSparkCanvas');
+      const pnlCtx = pnlCanvas.getContext('2d');
+
+      function drawPnlSparkline() {
+        const w = pnlCanvas.width;
+        const h = pnlCanvas.height;
+        pnlCtx.clearRect(0, 0, w, h);
+        const arr = state.pnlHistory;
+        if (arr.length < 2) return;
+        const minV = Math.min(...arr);
+        const maxV = Math.max(...arr) + 1;
+
+        pnlCtx.strokeStyle = '#00ff9d';
+        pnlCtx.lineWidth = 1.8;
+        pnlCtx.beginPath();
+        for (let i = 0; i < arr.length; i++) {
+          const x = (i / (arr.length - 1)) * (w - 8) + 4;
+          const y = h - 6 - ((arr[i] - minV) / (maxV - minV)) * (h - 14);
+          if (i === 0) pnlCtx.moveTo(x, y);
+          else pnlCtx.lineTo(x, y);
+        }
+        pnlCtx.stroke();
+
+        // Fill gradient under curve
+        const grad = pnlCtx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, 'rgba(0, 255, 157, 0.25)');
+        grad.addColorStop(1, 'rgba(0, 255, 157, 0.0)');
+        pnlCtx.lineTo(w - 4, h);
+        pnlCtx.lineTo(4, h);
+        pnlCtx.closePath();
+        pnlCtx.fillStyle = grad;
+        pnlCtx.fill();
+      }
+
+      const candleCanvas = document.getElementById('candleCanvas');
+      const candleCtx = candleCanvas.getContext('2d');
+
+      function drawCandles() {
+        const w = candleCanvas.width;
+        const h = candleCanvas.height;
+        candleCtx.clearRect(0, 0, w, h);
+        const candles = state.candles;
+        if (!candles.length) return;
+
+        let minP = Infinity;
+        let maxP = -Infinity;
+        candles.forEach(c => {
+          if (c.low < minP) minP = c.low;
+          if (c.high > maxP) maxP = c.high;
+        });
+        const span = Math.max(1, maxP - minP);
+        const cw = w / candles.length;
+
+        candles.forEach((c, idx) => {
+          const isUp = c.close >= c.open;
+          const color = isUp ? '#00ff9d' : '#ff3b5c';
+          const x = idx * cw + cw * 0.5;
+          const highY = h - 6 - ((c.high - minP) / span) * (h - 12);
+          const lowY = h - 6 - ((c.low - minP) / span) * (h - 12);
+          const openY = h - 6 - ((c.open - minP) / span) * (h - 12);
+          const closeY = h - 6 - ((c.close - minP) / span) * (h - 12);
+
+          candleCtx.strokeStyle = color;
+          candleCtx.lineWidth = 1;
+          candleCtx.beginPath();
+          candleCtx.moveTo(x, highY);
+          candleCtx.lineTo(x, lowY);
+          candleCtx.stroke();
+
+          candleCtx.fillStyle = color;
+          const topY = Math.min(openY, closeY);
+          const bodyH = Math.max(2, Math.abs(closeY - openY));
+          candleCtx.fillRect(x - cw * 0.3, topY, cw * 0.6, bodyH);
+        });
+      }
+
+      // Resolution Funnel Trajectories (Bottom Right)
+      const funnelCanvas = document.getElementById('funnelCanvas');
+      const funnelCtx = funnelCanvas.getContext('2d');
+
+      function seedFunnelTrajectories() {
+        state.funnelTrajectories = [];
+        for (let i = 0; i < 16; i++) {
+          const isWin = i < 11;
+          const isPreSigned = i < 4;
+          const pts = [];
+          let yNorm = 0.5 + (Math.random() - 0.5) * 0.25;
+          for (let s = 0; s <= 25; s++) {
+            const drift = isWin ? -0.012 : 0.014;
+            yNorm = Math.max(0.08, Math.min(0.92, yNorm + drift + (Math.random() - 0.5) * 0.04));
+            pts.push(yNorm);
+          }
+          state.funnelTrajectories.push({ pts, isWin, isPreSigned });
+        }
+      }
+      seedFunnelTrajectories();
+
+      function drawFunnel() {
+        const w = funnelCanvas.width;
+        const h = funnelCanvas.height;
+        funnelCtx.clearRect(0, 0, w, h);
+
+        // Horizontal baseline
+        funnelCtx.strokeStyle = '#16243a';
+        funnelCtx.setLineDash([4, 4]);
+        funnelCtx.beginPath();
+        funnelCtx.moveTo(0, h * 0.5);
+        funnelCtx.lineTo(w, h * 0.5);
+        funnelCtx.stroke();
+        funnelCtx.setLineDash([]);
+
+        state.funnelTrajectories.forEach((tr) => {
+          funnelCtx.strokeStyle = tr.isPreSigned
+            ? 'rgba(56, 189, 248, 0.85)'
+            : (tr.isWin ? 'rgba(0, 255, 157, 0.78)' : 'rgba(255, 59, 92, 0.45)');
+          funnelCtx.lineWidth = tr.isWin ? 1.6 : 1.0;
+          funnelCtx.beginPath();
+          tr.pts.forEach((py, idx) => {
+            const x = (idx / (tr.pts.length - 1)) * (w - 24) + 12;
+            const y = py * h;
+            if (idx === 0) funnelCtx.moveTo(x, y);
+            else funnelCtx.lineTo(x, y);
+          });
+          funnelCtx.stroke();
+        });
+
+        // Draw glowing resolution ellipse on the settlement zone (like the video)
+        const ex = w * 0.78;
+        const ey = h * 0.34;
+        funnelCtx.strokeStyle = 'rgba(226, 232, 240, 0.7)';
+        funnelCtx.lineWidth = 1.3;
+        funnelCtx.beginPath();
+        funnelCtx.ellipse(ex, ey, 22, 38, 0.15, 0, Math.PI * 2);
+        funnelCtx.stroke();
+
+        funnelCtx.fillStyle = '#00ff9d';
+        funnelCtx.beginPath();
+        funnelCtx.arc(w - 14, h * 0.24, 3.5, 0, Math.PI * 2);
+        funnelCtx.fill();
+      }
+
+      // ---------- 6. SIMULATION & EVENT INJECTION ----------
+      function nowTimeStr() {
+        const d = new Date();
+        return d.toISOString().slice(11, 19);
+      }
+
+      function injectTradeEvent(evType, customData) {
+        const chains = ['ARB', 'BASE', 'OP'];
+        const ch = customData?.chain || chains[Math.floor(Math.random() * chains.length)];
+        const tStr = nowTimeStr();
+
+        if (evType === 'CASCADE') {
+          state.cexSpotPrice = +(state.ethPrice * 0.982).toFixed(2);
+          state.ethPrice = state.cexSpotPrice;
+          state.spikePulse = 1.0;
+          const profit = +(185 + Math.random() * 260).toFixed(2);
+          state.allTimePnl += profit;
+          state.pnl24h += profit;
+          state.pnlLiquidations += profit;
+          state.settledCount += 2;
+          state.pnlHistory.push(state.allTimePnl);
+          if (state.pnlHistory.length > 70) state.pnlHistory.shift();
+
+          state.tapeEvents.unshift({
+            time: tStr,
+            chain: 'ARB',
+            type: 'LIQ',
+            route: 'VegaCascade: WETH + wstETH Morpho/Aave',
+            loan: '$15,101',
+            gas: '$0.052',
+            status: 'PRE-SIGNED',
+            pnl: profit
+          });
+          document.getElementById('lastSettleBadge').textContent = `LAST: +$${profit.toFixed(2)} (LST CASCADE)`;
+          document.getElementById('torusEventStatus').textContent = `⚡ BINANCE LEAD-LAG TRIGGERED: 2 LST LIQUIDATIONS SETTLED (+$${profit.toFixed(2)})`;
+          playHudTone(880, 180, 'triangle');
+        } else if (evType === 'INTRA_DEX') {
+          state.spikePulse = 0.75;
+          const loanUsd = Math.round(650 + Math.random() * 3800);
+          const profit = +(3.40 + Math.random() * 24.50).toFixed(2);
+          state.allTimePnl += profit;
+          state.pnl24h += profit;
+          state.pnlIntraDex += profit;
+          state.settledCount += 1;
+          state.pnlHistory.push(state.allTimePnl);
+          if (state.pnlHistory.length > 70) state.pnlHistory.shift();
+
+          const routes = [
+            'UniV3(0.01%->0.05%) WETH/USDC',
+            'CamelotV3(Algebra)->UniV3 ARB/WETH',
+            'FluidDEX(0.005%)->UniV3 weETH/WETH',
+            'Aerodrome->UniV3 cbETH/WETH'
+          ];
+          const pickedRoute = customData?.route || routes[Math.floor(Math.random() * routes.length)];
+          state.tapeEvents.unshift({
+            time: tStr,
+            chain: ch,
+            type: 'ARB_SWAP',
+            route: pickedRoute,
+            loan: '$' + loanUsd.toLocaleString(),
+            gas: '$0.042',
+            status: 'SETTLED',
+            pnl: profit
+          });
+          document.getElementById('hudOptLoan').textContent = '$' + loanUsd.toLocaleString();
+          document.getElementById('hudOptProfit').textContent = '+$' + profit.toFixed(2) + ' NET';
+          document.getElementById('lastSettleBadge').textContent = `LAST: +$${profit.toFixed(2)} (${ch} INTRA-DEX)`;
+          document.getElementById('torusEventStatus').textContent = `● CAPTURED ${ch} ${pickedRoute} (+$${profit.toFixed(2)})`;
+          playHudTone(620, 120, 'sine');
+        } else if (evType === 'ABORT') {
+          state.abortedCount += 1;
+          state.pnlGasSpent += 0.008;
+          state.tapeEvents.unshift({
+            time: tStr,
+            chain: ch,
+            type: 'ABORT',
+            route: 'quotePathOnChain() Guard Abort',
+            loan: '$2,400',
+            gas: '$0.008',
+            status: 'ABORTED',
+            pnl: -0.008
+          });
+          playHudTone(240, 90, 'sawtooth');
+        }
+
+        seedFunnelTrajectories();
+        updateHeaderAndCounters();
+        renderOrderbook();
+        renderVegaTable();
+        renderExecutionTape();
+        drawPnlSparkline();
+        drawFunnel();
+      }
+
+      // ---------- 7. RESIZE & ANIMATION LOOP ----------
+      function resizeAllCanvases() {
+        [torusCanvas, pnlCanvas, candleCanvas, funnelCanvas].forEach(c => {
+          if (!c) return;
+          const rect = c.parentElement.getBoundingClientRect();
+          c.width = Math.max(100, Math.floor(rect.width));
+          c.height = Math.max(60, Math.floor(rect.height));
+        });
+        drawPnlSparkline();
+        drawCandles();
+        drawFunnel();
+      }
+
+      window.addEventListener('resize', resizeAllCanvases);
+
+      function startAnimationLoop() {
+        function frame() {
+          drawTorus();
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }
+
+      // Periodic live market tick every 2.2 seconds
+      setInterval(() => {
+        const now = new Date();
+        document.getElementById('hdrClock').textContent = now.toISOString().slice(11, 19) + ' UTC';
+
+        // Update candle price slightly
+        const lastC = state.candles[state.candles.length - 1];
+        const nextClose = +(lastC.close + (Math.random() - 0.485) * 2.4).toFixed(2);
+        const nextHigh = Math.max(lastC.close, nextClose) + Math.random() * 1.3;
+        const nextLow = Math.min(lastC.close, nextClose) - Math.random() * 1.3;
+        state.candles.push({ open: lastC.close, high: nextHigh, low: nextLow, close: nextClose });
+        if (state.candles.length > 36) state.candles.shift();
+
+        state.cexSpotPrice = nextClose;
+        state.ethPrice = nextClose;
+        state.chainlinkPrice = +(nextClose + (Math.random() - 0.45) * 1.2).toFixed(2);
+
+        drawCandles();
+
+        // Randomly emit an intra-DEX capture or early abort
+        const roll = Math.random();
+        if (roll < 0.58) {
+          injectTradeEvent('INTRA_DEX');
+        } else if (roll < 0.75) {
+          injectTradeEvent('ABORT');
+        } else {
+          updateHeaderAndCounters();
+          renderOrderbook();
+          renderVegaTable();
+        }
+      }, 2200);
+
+      // ---------- 8. UI CONTROL LISTENERS ----------
+      document.querySelectorAll('.chain-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.chain-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.selectedChain = btn.getAttribute('data-chain');
+          renderVegaTable();
+          renderExecutionTape();
+          playHudTone(520, 70, 'sine');
+        });
+      });
+
+      document.querySelectorAll('.tape-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tape-filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.tapeFilter = btn.getAttribute('data-tapefilter');
+          renderExecutionTape();
+          playHudTone(480, 60, 'sine');
+        });
+      });
+
+      document.getElementById('btnTriggerCascade').addEventListener('click', () => {
+        injectTradeEvent('CASCADE');
+      });
+
+      document.getElementById('btnInjectIntraDex').addEventListener('click', () => {
+        injectTradeEvent('INTRA_DEX');
+      });
+
+      document.getElementById('btnToggleMode').addEventListener('click', (e) => {
+        state.isLiveMode = !state.isLiveMode;
+        const badge = document.getElementById('modeBadge');
+        if (state.isLiveMode) {
+          e.currentTarget.textContent = '🔥 MODE: LIVE RPC';
+          badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-cyan-400 pulse-dot"></span> LIVE SEQUENCER FEED';
+          badge.className = 'ml-1 px-1.5 py-0.5 text-[10px] rounded bg-cyan-500/20 border border-cyan-400 text-cyan-300 font-semibold flex items-center gap-1';
+        } else {
+          e.currentTarget.textContent = '🎯 MODE: DRY-RUN';
+          badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span> DRY-RUN SIMULATOR';
+          badge.className = 'ml-1 px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/15 border border-emerald-500/50 text-emerald-400 font-semibold flex items-center gap-1';
+        }
+        playHudTone(700, 90, 'triangle');
+      });
+
+      document.getElementById('btnToggleAudio').addEventListener('click', (e) => {
+        state.audioEnabled = !state.audioEnabled;
+        e.currentTarget.textContent = state.audioEnabled ? '🔊 AUDIO: ON' : '🔇 AUDIO: OFF';
+        if (state.audioEnabled) playHudTone(660, 120, 'sine');
+      });
+
+      document.getElementById('btnResetCamera').addEventListener('click', () => {
+        state.torusRotX = 0.52;
+        state.torusRotY = 0.0;
+        state.torusZoom = 1.0;
+      });
+
+      // Modal Controls
+      const bridgeModal = document.getElementById('bridgeModal');
+      document.getElementById('btnOpenBridgeModal').addEventListener('click', () => {
+        bridgeModal.classList.remove('hidden');
+        bridgeModal.classList.add('flex');
+      });
+      document.getElementById('btnCloseBridgeModal').addEventListener('click', () => {
+        bridgeModal.classList.add('hidden');
+        bridgeModal.classList.remove('flex');
+      });
+
+      document.getElementById('btnConnectWs').addEventListener('click', () => {
+        const url = document.getElementById('wsEndpointInput').value.trim();
+        const fb = document.getElementById('wsConnectFeedback');
+        fb.textContent = `Connecting to ${url}... (If local bot WS is not running, 60fps simulation continues seamlessly)`;
+        fb.className = 'text-[10px] text-cyan-300 mt-1';
+        try {
+          const ws = new WebSocket(url);
+          ws.onopen = () => {
+            fb.textContent = `Connected to live v3.2 bot stream at ${url}!`;
+            fb.className = 'text-[10px] text-emerald-400 mt-1 font-bold';
+          };
+          ws.onmessage = (msg) => {
+            try {
+              const data = JSON.parse(msg.data);
+              injectTradeEvent('INTRA_DEX', data);
+            } catch (err) {}
+          };
+          ws.onerror = () => {
+            fb.textContent = `Local WS (${url}) not detected yet — running built-in v3.2 simulation engine.`;
+            fb.className = 'text-[10px] text-amber-300 mt-1';
+          };
+        } catch (err) {
+          fb.textContent = `Browser sandbox mode active — using built-in v3.2 simulation engine.`;
+        }
+      });
+
+      document.getElementById('btnInjectCustomJson').addEventListener('click', () => {
+        const raw = document.getElementById('jsonLogInput').value.trim();
+        try {
+          const parsed = raw ? JSON.parse(raw) : { chain: 'ARB', route: 'Custom Injected v3.2 Flash Route' };
+          injectTradeEvent('INTRA_DEX', parsed);
+          bridgeModal.classList.add('hidden');
+          bridgeModal.classList.remove('flex');
+        } catch (e) {
+          injectTradeEvent('INTRA_DEX', { chain: 'ARB', route: raw || 'Manual Flash Route' });
+          bridgeModal.classList.add('hidden');
+          bridgeModal.classList.remove('flex');
+        }
+      });
+
+      // Initialize on load
+      window.addEventListener('load', () => {
+        resizeAllCanvases();
+        updateHeaderAndCounters();
+        renderOrderbook();
+        renderVegaTable();
+        renderExecutionTape();
+        startAnimationLoop();
+      });
+    })();
+  </script>
+</body>
+</html>
+
