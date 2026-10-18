@@ -1,0 +1,25 @@
+{
+  "_warning": "Template only. Replace every placeholder with verified Arbitrum One addresses and real token metadata before running.",
+  "tokens": {
+    "0x0000000000000000000000000000000000000001": {
+      "symbol": "TOKEN0",
+      "decimals": 18
+    },
+    "0x0000000000000000000000000000000000000002": {
+      "symbol": "TOKEN1",
+      "decimals": 6
+    }
+  },
+  "pools": [
+    {
+      "dex": "POOL_A",
+      "address": "0x0000000000000000000000000000000000000011",
+      "fee_bps": 30
+    },
+    {
+      "dex": "POOL_B",
+      "address": "0x0000000000000000000000000000000000000022",
+      "fee_bps": 5
+    }
+  ]
+}
