@@ -71,3 +71,56 @@ Based on large-scale empirical findings from [Messias & Torres (July 2026, arXiv
 3. **Run 24 Hours in `DRY_RUN=true` Mode Before Enabling Live Broadcasts**:
    * Keep `.env` untracked (never commit keys to GitHub) and fund the executor wallet with only `0.005–0.01 ETH` ($13–$26) for Arbitrum gas. Because all flash loan principal is borrowed atomically from Balancer V2 (0% fee) and enforced by `require(finalBalance >= totalRepay + minProfit)`, your principal is never at risk.
 
+
+
+## Read-only scanner modules (feature branch)
+
+These starter modules are separate from the existing bot and deliberately do not send transactions:
+
+- `bot/opportunity_scanner.py`: reads configured Uniswap-V3-compatible pool state via Arbitrum JSON-RPC and prints indicative spot-price differences.
+- `bot/profit_calculator.py`: estimates net profit after user-supplied fee/cost assumptions.
+- `bot/transaction_simulator.py`: runs `eth_call` and `eth_estimateGas` for caller-supplied calldata. It does not construct calldata, sign, or broadcast a transaction.
+
+### Setup
+
+1. Use Python 3.10 or newer. These modules use the standard library only.
+2. Copy `config/arbitrum_pools.example.json` to `config/arbitrum_pools.json`.
+3. Replace every example token and pool address with verified Arbitrum One addresses. The two pools compared must contain the same token pair in the same token order.
+4. Set `ARBITRUM_RPC_URL` to your trusted Arbitrum One RPC endpoint.
+5. Run a single read-only scan:
+
+```bash
+ARBITRUM_RPC_URL="https://YOUR_ARBITRUM_RPC" \
+ARBITRUM_POOL_CONFIG="config/arbitrum_pools.json" \
+python bot/opportunity_scanner.py
+```
+
+The scanner prints pool spot prices and any indicative spread. It defaults to one scan; set `SCAN_ONCE=false` to repeat, and optionally set `SCAN_INTERVAL_SECONDS=15`.
+
+### Cost estimate
+
+```bash
+python bot/profit_calculator.py
+```
+
+This prints an explicitly illustrative calculation. For your own estimate, import `estimate_profit` and supply prices, fees, gas cost, L1 data fee and conservative slippage reserves in a common quote currency.
+
+### Read-only transaction simulation
+
+Set `SIMULATION_TX_JSON` to a JSON object containing a prepared `to` address and `data` calldata, plus optional `from` and `value`, then run:
+
+```bash
+ARBITRUM_RPC_URL="https://YOUR_ARBITRUM_RPC" \
+SIMULATION_TX_JSON='{"to":"0xTARGET","data":"0xCALLDATA"}' \
+python bot/transaction_simulator.py
+```
+
+Do not use fabricated calldata. A successful `eth_call` is not proof a transaction will be included or profitable.
+
+### Important safety limits
+
+- These modules are a read-only integration milestone, not a production trading system.
+- The scanner's spread is a spot-price indicator, not an executable quote. It does not model concentrated-liquidity price impact or prove available trade size.
+- The profit estimator is simplified and only as accurate as the supplied inputs; verify fee units and costs before relying on it.
+- The simulator only checks a prepared call against current state; it does not build the flash-loan route or send transactions.
+- Do not enable live trading based on these modules alone. Validate real pool addresses, quote sizes, token decimals, fees, gas/L1 costs, fork simulations and contract security first.
