@@ -1,73 +1,93 @@
-# Zero-Capital Arbitrum Flash Loan Arbitrage & Multi-Protocol OEV Suite (v3)
+# Arbitrum One Read-Only Opportunity Scanner, Cross-Chain Speculative OEV, UniswapX Intent Filler & Flash-Loan Research Suite (v3.5)
 
-## 1. Executive Summary & Audit of `omollohzack/arbitrum-flashloan-research` (v2 → v3)
+## 1. Project Scope & Architecture Classification
 
-A full forensic audit of the uploaded v2 files and the GitHub repository [`omollohzack/arbitrum-flashloan-research`](https://github.com/omollohzack/arbitrum-flashloan-research) (commits [`5461da0`](https://github.com/omollohzack/arbitrum-flashloan-research/commit/5461da00b06af165e0da22a45b21dd0fd4cf1268) and [`8da2f14`](https://github.com/omollohzack/arbitrum-flashloan-research/commit/8da2f1410500076e800383d293b6925b91ac6ffa), plus `REVIEW_NOTES.md` and `tests/README.md`) identified **five critical profitability blockers** that prevented v2 from generating consistent daily profit on Arbitrum One:
+This repository provides a **verification-first, read-only Arbitrum One (`chain_id = 42161`) and Optimism (`chain_id = 10`) opportunity discovery, cross-chain oracle lead-lag monitor, Dutch-auction intent evaluator, cost-accounting, and pinned-block simulation suite**, paired with reference smart-contract (`contracts/FlashLoanArbitrage.sol`) and multi-protocol liquidation/keeper research modules.
 
-| Blocker ID | v2 Bug / Bottleneck (`FlashLoanArbitrage.sol` & `arbitrum_flash_bot.py`) | Impact on Daily Profit | v3 Architectural Fix & Verification |
-| :--- | :--- | :--- | :--- |
-| **1. Fixed $10,000 Probe Slippage** | `scan_camelot_sushi_cyclic_routes()` hardcoded a `$10,000 USDC` quote (`probe_usdc = 10_000 * 1e6`) instead of calling the Bisection sizer. On mid-cap pools ($50k–$200k TVL), a $10k trade creates 10%–20% price-impact slippage (`-$1,774.61` loss on a profitable 1.8% dislocation). | **0.0% capture rate** on mid-cap dislocations (vs. **49.0% capture** with dynamic sizing) | Connected `LineGraphMMBFEngine` ([arXiv:2406.16573v1](https://arxiv.org/html/2406.16573v1)) directly to the closed-form 2-hop & 45-step Bisection N-hop sizer ($\Delta x^*$), turning a `-$1,774.61` probe loss into a `+$2.11` net profit on a `$304.37` flash loan. |
-| **2. V3 & Camelot V3 Blindness in `quoteV2PathOnChain`** | `quoteV2PathOnChain()` returned `(false, 0)` whenever a route included Uniswap V3 (`swapType == 1`) or Camelot V3 Algebra, disabling `softAbortIfUnprofitable` on >75% of Arbitrum liquidity and causing 352,000-gas reverts. | **86.9% higher gas burn** on failed attempts (`352k` vs `46.2k` gas) | Replaced with `quotePathOnChain()`, which reads Uniswap V3 `slot0()` and [Camelot V3 Algebra](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/) `globalState()` + `liquidity()` on-chain to compute concentrated virtual reserves ([arXiv:2606.00720v1](https://arxiv.org/html/2606.00720v1)). |
-| **3. Camelot V2 Directional Fee Mismatch** | `swapType == 2` assumed all V2 pairs use a static `0.30%` (`9970/10000`) fee. On Arbitrum, [Camelot V2 Pairs](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/) return a 4-tuple `(reserve0, reserve1, token0FeePercent, token1FeePercent)` in `100,000` precision with directional fees. | Reverts with `CamelotPair: K` on custom-fee pools | Added `swapType = 3` (`ICamelotPair`) reading exact directional `token0FeePercent` / `token1FeePercent` (`100000` denominator) and `swapType = 4` (`IAlgebraSwapRouter` `0x1F721E2E82F6676FCE4eA07A5958cF098D339e18`). |
-| **4. Partial Liquidation Revert Bug** | In `SINGLE_LIQUIDATION`, line 530 set `finalBalance = _executeMultiHopSwaps(...)`, ignoring unspent borrowed `debtAsset` when [Aave V3](https://aave.com/blog/historical-liquidations) applies a **50% Close Factor** (`0.95 <= HF < 1.00`). | False reverts on **100% of partial liquidations** (`HF` between `0.95` and `1.00`) | Fixed `SINGLE_LIQUIDATION` to set `finalBalance = IERC20(liq.debtAsset).balanceOf(address(this))` after swapping seized collateral, plus strict `_safeApprove(token, spender, 0)` allowance resets. |
-| **5. Empty `sample_borrowers = []` Watchlist** | `arbitrum_flash_bot.py` initialized `sample_borrowers = []` with no on-chain borrower discovery and only supported Aave V3. | **$0.00/day** from liquidations | Added `BorrowerIndexer` (scanning Aave V3 `Borrow` logs `0xb3d084...` into `watched_borrowers_cache.json`) and added [Compound V3 Comet](https://docs.keeperhub.com/plugins/compound) (`absorb` + `buyCollateral`) flash liquidations. |
+To maintain strict engineering transparency, every component in this repository is classified into one of three explicit categories:
 
----
+### A. Observed & Tested (Verified by 31 Automated Unit & Deterministic Pinned-Block Tests)
+1. **Fail-Closed Configuration & On-Chain Metadata Validation (`bot/opportunity_scanner.py`)**:
+   - Rejects template configs (`is_example_template = true`), zero/placeholder addresses (`0x000...0001`), duplicate pools, and mismatched pair orientations before making network calls.
+   - Verifies `eth_chainId == 42161` (Arbitrum One), checks block freshness (`max_block_age_seconds`), confirms deployed contract bytecode (`eth_getCode`) at the pinned block, and verifies on-chain token `decimals()` and pool `token0()` / `token1()`.
+2. **Single-RPC `Multicall3` Pinned-Block State Batching (`bot/opportunity_scanner.py`)**:
+   - Packs all pool state reads (`token0`, `token1`, `slot0`, `globalState`, `liquidity`, `fee`) into a single pinned-block [`Multicall3.tryAggregate` (`0xcA11bde05977b3631167028862bE2a173976CA11`)](https://github.com/mds1/multicall3) RPC request (`0xbce38bd7`), eliminating 13+ sequential HTTP round-trips per scan cycle, with automatic fallback to individual `eth_call` requests.
+3. **Cross-Chain Speculative OEV Lead-Lag Monitor (`bot/cross_chain_oev_monitor.py`)**:
+   - Grounded in [*Signals and Spoils: Speculative Oracle Extractable Value in the Era of Cross-Chain Price Feeds* (`arXiv:2606.03434v1`, June 2026)](https://arxiv.org/html/2606.03434v1) and the [Compound DAO OEV Rollout Update (July 2025)](https://www.comp.xyz/t/oev-rfp-process-update-july-2025/6945).
+   - Polls Chainlink `latestRoundData()` (`0xfeaf968c`) on Optimism (`0x13e3Ee699D1909E989722E753853AE30b17e08c5`) and Arbitrum One (`0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612`), detects when Optimism leads Arbitrum by up to ~6 seconds on a price drop, and projects Arbitrum borrower Health Factors (`H^{(OP)}(t) = H^{(ARB)}(t) * P^{(OP)} / P^{(ARB)}`) before the Arbitrum oracle updates.
+4. **Zero-Capital UniswapX Dutch-Auction Intent & V4 Singleton Evaluator (`bot/uniswapx_filler_evaluator.py` & `contracts/FlashLoanArbitrage.sol`)**:
+   - Grounded in [`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX), [Chitra et al. (`arXiv:2403.02525v1`)](https://arxiv.org/html/2403.02525v1), and [Cyfrin Updraft Uniswap V4 `PoolManager`](https://updraft.cyfrin.io/courses/uniswap-v4/pool-manager/swap-contract-calls).
+   - Evaluates linear Dutch-auction decay curves (`compute_dutch_decayed_output_raw`), calculates exact timestamps where `reactorCallback` (`IReactorCallback`) fills become net-positive after L1+L2 gas, and implements `executeUniswapXIntentFill` / `reactorCallback` and `executeUniswapV4SingletonArb` / `unlockCallback` in `contracts/FlashLoanArbitrage.sol`.
+5. **DEX-Specific Concentrated Liquidity Adapters (`UniswapV3PoolAdapter` & `CamelotAlgebraPoolAdapter`)**:
+   - Queries Uniswap V3 pools via `slot0()`, `liquidity()`, `fee()`, and [Uniswap V3 `QuoterV2` (`0x61fFE014bA17989E743c5F6cB21bF9697530B21e`)](https://developers.uniswap.org/docs/protocols/v3/deployments/v3-arbitrum-deployments).
+   - Queries Camelot V3 (Algebra) pools via `globalState()` (`0xe76c01e4`, reading dynamic fee in hundredths of a bip), `liquidity()`, and [Camelot Algebra Quoter (`0x0Fc73040b26E9bC8514fA028D998E73A254Fa76E`)](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/).
+6. **Raw-Integer Profit Accounting & Live Arbitrum `NodeInterface` Gas Decomposition (`bot/profit_calculator.py` & `bot/transaction_simulator.py`)**:
+   - Performs all profitability arithmetic in raw integer token units (`int`) and `Decimal`, preventing double-subtraction of pool swap fees when using fee-inclusive Quoter outputs.
+   - Queries Arbitrum's precompile [`NodeInterface.gasEstimateComponents` (`0x00000000000000000000000000000000000000C8`, selector `0x4d2301cc`)](https://docs.arbitrum.io/arbitrum-essentials/nodeinterface/reference) at the pinned block to decompose exact L2 execution gas (`gasEstimate - gasEstimateForL1`) and L1 calldata poster costs (`gasEstimateForL1`).
+7. **Read-Only Flash-Liquidation & Permissionless Keeper Bounty Scanners (`bot/liquidation_and_keeper_scanner.py`)**:
+   - Scans [Aave V3 Pool (`0x794a61358D6845594F94dc1DB02A252b5b4814aD`)](https://aave.com/blog/historical-liquidations) borrower positions via `getUserAccountData(address)` (`0xbf92857c`), applying exact `50%` vs `100%` close-factor rules (`HF < 0.95e18`) and deducting flash-loan fees, DEX swap slippage, and L1+L2 gas.
+   - Scans permissionless yield-vault harvest bounties (`callReward()` `0x6b29a679` and `paused()` `0x5c975abb`, grounded in [`beefyfinance/beefy-contracts`](https://github.com/beefyfinance/beefy-contracts)) against total L1+L2 gas cost.
+8. **Multi-Block (`B -> B+1`) Persistence Logger & Go/No-Go Scorecard (`bot/paper_trading_logger.py`)**:
+   - Runs multi-cycle read-only paper-trading campaigns, logs structured JSONL records, checks whether net-positive routes at block `B` survive at block `B + 1`, and outputs an objective `READY_FOR_FORK_SIM` vs `KEEP_COLLECTING_DATA` verdict.
 
-## 2. Empirical Strategy Benchmarks: How to Reach $100/Day on Arbitrum One
+### B. Assumed (Configurable Parameters Requiring Live RPC or Fork Confirmation)
+- Default fallback gas parameters (`l2_gas_units = 240,000`, `l2_gas_price_wei = 20,000,000` [0.02 gwei], and `l1_data_fee_wei = 13,920,000,000,000`) are used when `NodeInterface` is not queried directly.
+- Default slippage/competition margin (`slippage_buffer_bps = 5` for cyclic arbitrage, `20` bps for liquidations, `3` bps for UniswapX Dutch fills) is a conservative modeling buffer; actual execution slippage depends on intra-block transaction ordering on the Arbitrum sequencer.
 
-Based on large-scale empirical findings from [Messias & Torres (July 2026, arXiv:2509.22143v2)](https://arxiv.org/html/2509.22143v2?ref=blog.arbitrum.foundation) (analyzing 161.24M Arbitrum blocks and 715,450 atomic arbitrages), [Wu & Öz (May 2026, arXiv:2606.00720v1)](https://arxiv.org/html/2606.00720v1) (21.37M cyclic arbitrages), [Zhang et al. (arXiv:2406.16573v1)](https://arxiv.org/html/2406.16573v1), and [Aave Labs (February 2026)](https://aave.com/blog/historical-liquidations):
-
-1. **Do NOT Bid in Timeboost Auctions or Pay Kairos Relay Fees for Atomic DEX-DEX Arbitrage**:
-   * [Messias & Torres (2026, arXiv:2509.22143v2 Section 5.1–5.5)](https://arxiv.org/html/2509.22143v2?ref=blog.arbitrum.foundation) proved that **90% of all successful atomic DEX-DEX arbitrages on Arbitrum One (`646,821` of `715,450`) execute in the regular (non-Timeboosted) queue** near the end of 250ms blocks (capturing up to **$12,282.44** on a single trade vs. $903.04 max in Timeboost).
-   * Express lane controllers (Selini Capital, Wintermute, Kairos) use 88.91% of Timeboost traffic for CEX-DEX arbitrage and utilize only **10.72% of blocks**. Meanwhile, submitting through the Kairos secondary relay results in a **48.5% revert rate** due to unverified bundle dependencies.
-   * **Optimal Submission Policy**: Submit directly to the regular Arbitrum sequencer queue using **Multicall3 (`0xcA11bde05977b3631167028862bE2a173976CA11`)** 250ms state snapshots with `softAbortIfUnprofitable = true` (cutting failed-attempt gas from `352,000` to `46,200` gas, or ~$0.009 on Arbitrum).
-
-2. **Combine 4 Uncorrelated On-Chain Revenue Engines to Average $124.94/Day ($3,748/Month)**:
-
-| Revenue Engine | Calm Day (50% of month) | Normal Active Day (35% of month) | Volatile / Deleveraging Day (15% of month) | 30-Day Blended Daily EV |
-| :--- | ---: | ---: | ---: | ---: |
-| **Engine 1: 3-to-4 Hop Line-Graph MMBF Cyclic Arb** (UniV3 + Camelot V3 Algebra + Camelot V2 + Sushi) | $24.50 | $38.00 | $74.00 | **$36.65 / day** |
-| **Engine 2: Concentrated Fee-Tier & LST/Stable Peg Arb** (`0.01% ↔ 0.05% ↔ 0.30%`, `wstETH/weETH/WETH`) | $14.80 | $22.40 | $46.00 | **$22.14 / day** |
-| **Engine 3: Launch-Pool / Opportunity-Shock Backrunner** ([arXiv:2606.00720v1 Sec 5.3](https://arxiv.org/html/2606.00720v1)) | $9.20 | $21.60 | $48.00 | **$19.36 / day** |
-| **Engine 4: Multi-Protocol OEV Flash Liquidations** ([Aave V3](https://aave.com/blog/historical-liquidations) + [Compound V3 Comet](https://docs.keeperhub.com/plugins/compound), Optimism Lead) | $18.50 | $42.50 | $165.00 | **$48.88 / day** |
-| **Less: Arbitrum L1+L2 Gas & Soft-Abort Overhead** | -$1.45 | -$2.10 | -$4.20 | **-$2.09 / day** |
-| **Net Daily Profit ($ USD)** | **$65.55 / day** | **$122.40 / day** | **$328.80 / day** | **$124.94 / day** |
-
----
-
-## 3. Verified Arbitrum One Mainnet Contract Addresses
-
-| Protocol / Component | Arbitrum One Address (Chain ID: `42161`) | Fee / Role |
-| :--- | :--- | :--- |
-| **Balancer V2 Vault** | `0xBA12222222228d8Ba445958a75a0704d566BF2C8` | **0.00% Flash Loan Provider** (Primary) |
-| **Aave V3 Pool** | `0x794a61358D6845594F94dc1DB02A252b5b4814aD` | **0.05% Flash Loan & Liquidation Target** (5%–10% bonus) |
-| **[Compound V3 USDC Comet](https://docs.keeperhub.com/plugins/compound)** | `0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf` | **`absorb()` + `buyCollateral()` Liquidation Target** |
-| **[Compound V3 USDT Comet](https://docs.keeperhub.com/plugins/compound)** | `0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07` | **`absorb()` + `buyCollateral()` Liquidation Target** |
-| **[Compound V3 WETH Comet](https://docs.keeperhub.com/plugins/compound)** | `0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486` | **`absorb()` + `buyCollateral()` Liquidation Target** |
-| **[Camelot V3 (Algebra) SwapRouter](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/)** | `0x1F721E2E82F6676FCE4eA07A5958cF098D339e18` | `swapType = 4` Dynamic-Fee Concentrated Liquidity |
-| **[Camelot V3 (Algebra) Quoter](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/)** | `0x0Fc73040b26E9bC8514fA028D998E73A254Fa76E` | Off-chain exact tick quote verification |
-| **[Camelot V2 Router](https://docs.camelot.exchange/contracts/arbitrum/one-mainnet/)** | `0xc873fEcbd354f5A56E00E710B90EF4201db2448d` | `swapType = 0` (or `swapType = 3` Direct Pair) |
-| **[Uniswap V3 SwapRouter](https://developers.uniswap.org/docs/protocols/v3/deployments/v3-arbitrum-deployments)** | `0xE592427A0AEce92De3Edee1F18E0157C05861564` | `swapType = 1` Concentrated Liquidity |
-| **[Uniswap V3 QuoterV2](https://developers.uniswap.org/docs/protocols/v3/deployments/v3-arbitrum-deployments)** | `0x61fFE014bA17989E743c5F6cB21bF9697530B21e` | Off-chain exact multi-tick quote verification |
-| **[Multicall3](https://etherscan.io/address/0xcA11bde05977b3631167028862bE2a173976CA11)** | `0xcA11bde05977b3631167028862bE2a173976CA11` | Single-RPC batch state & Health Factor reader |
-| **[Arbitrum NodeInterface](https://docs.arbitrum.io/arbitrum-bridge/withdrawal-monitoring)** | `0x00000000000000000000000000000000000000C8` | L1 calldata + L2 gas cost estimator |
+### C. Not Implemented (Out of Scope for Read-Only Mode)
+- **No Live Transaction Signing or Broadcasting**: The read-only scanner, simulator, cross-chain OEV monitor, UniswapX evaluator, liquidation scanner, and paper-trading logger never load a private key, sign transactions, or submit transactions to the Arbitrum sequencer.
+- **No Sub-Millisecond Co-Located Sequencer Relay**: This codebase does not include paid private relay bidding or co-located sequencer hardware.
 
 ---
 
-## 4. Pre-Deployment Verification & Live Launch Steps
+## 2. Empirical Research: Most Efficient Zero-to-Minimal Capital Smart Contract Strategies (v3.5)
 
-1. **Run the Automated Offline Test Suite (`test_suite_v3.py`)**:
-   ```bash
-   python3 arbitrum_flash_bot.py --self-test
-   python3 test_suite_v3.py
-   ```
-2. **Deploy `FlashLoanArbitrage.sol` (v3) on Arbitrum One**:
-   * Compile with Solidity `0.8.20` (Optimization enabled: `200` runs).
-   * Pass constructor arguments:
-     * `_payoutWallet`: Your cold/hardware profit-receiving wallet address
-     * `_balancerVault`: `0xBA12222222228d8Ba445958a75a0704d566BF2C8`
-     * `_aavePool`: `0x794a61358D6845594F94dc1DB02A252b5b4814aD`
-3. **Run 24 Hours in `DRY_RUN=true` Mode Before Enabling Live Broadcasts**:
-   * Keep `.env` untracked (never commit keys to GitHub) and fund the executor wallet with only `0.005–0.01 ETH` ($13–$26) for Arbitrum gas. Because all flash loan principal is borrowed atomically from Balancer V2 (0% fee) and enforced by `require(finalBalance >= totalRepay + minProfit)`, your principal is never at risk.
+Based on peer-reviewed empirical studies ([`arXiv:2606.03434v1` *Signals and Spoils*](https://arxiv.org/html/2606.03434v1); [Chitra et al. `arXiv:2403.02525v1`](https://arxiv.org/html/2403.02525v1); [Wu & Öz 2026, `arXiv:2606.00720v1`](https://arxiv.org/html/2606.00720v1); [Messias & Torres 2026, `arXiv:2509.22143v2`](https://arxiv.org/html/2509.22143v2?ref=blog.arbitrum.foundation); [Qin et al., `arXiv:2106.06389v2`](https://arxiv.org/html/2106.06389v2)) and production open-source repositories ([`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX), [`morpho-org/morpho-blue-liquidation-bot`](https://github.com/morpho-org/morpho-blue-liquidation-bot), [`0xnavarro/Aave-Liquiditor`](https://github.com/0xnavarro/Aave-Liquiditor), [`beefyfinance/beefy-contracts`](https://github.com/beefyfinance/beefy-contracts), [`mds1/multicall3`](https://github.com/mds1/multicall3)), zero-capital smart contract strategies rank from **highest efficiency / lowest latency competition** to **most latency-contested** as follows:
 
+| Strategy Lane | Upfront Capital Needed | Typical Gross Margin per Execution | Latency & Competition Profile | Implemented Module in v3.5 |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Cross-Chain Speculative OEV Liquidations** ([`arXiv:2606.03434v1`](https://arxiv.org/html/2606.03434v1) Optimism-Leads-Arbitrum) | **$0 principal** (Flash-loaned via Balancer V2 / Morpho Blue; ~$15–$25 ETH gas buffer) | **5.0% – 10.0%** full liquidation bonus (no Chainlink SVR cut on L2s per [Compound DAO](https://www.comp.xyz/t/oev-rfp-process-update-july-2025/6945)) | **~6,000ms Cross-Chain Lead Window**: Optimism Chainlink updates up to 6s before Arbitrum, neutralizing ~200ms geographic latency. | `bot/cross_chain_oev_monitor.py` & `bot/liquidation_and_keeper_scanner.py` |
+| **2. Zero-Capital UniswapX Dutch-Auction Intent Filling** ([`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX) & [`arXiv:2403.02525v1`](https://arxiv.org/html/2403.02525v1)) | **$0 principal & 0% flash-loan fee** (`reactorCallback` receives user's `inputToken` upfront) | **0.05% – 0.35%** Dutch decay surplus over on-chain DEX routing | **Auction-decay driven (Medium latency)**: Profitable at the exact block timestamp where `requiredOutput` decays below `Multicall3` DEX output. | `bot/uniswapx_filler_evaluator.py` & `contracts/FlashLoanArbitrage.sol` (`reactorCallback`) |
+| **3. Permissionless Yield-Vault Harvest Keepers** ([Beefy `callReward()`](https://github.com/beefyfinance/beefy-contracts)) | **$0 principal & $0 contract deployment** (Callable from standard EOA; ~$5 ETH gas buffer) | **0.05% – 0.50%** of harvested vault yield paid in `WETH`/native token | **Threshold-driven (Low latency)**: Profitable whenever accumulated `callReward() > L1+L2 gas`. Immune to MEV sandwiching. | `bot/liquidation_and_keeper_scanner.py` (`scan_permissionless_keeper_bounties_readonly`) |
+| **4. Long-Tail & Multi-Hop Concentrated DEX Arbitrage + V4 Singleton** ([Wu & Öz 2026](https://arxiv.org/html/2606.00720v1)) | **$0 principal** (0%-fee Balancer V2 / Morpho Blue / V4 `unlockCallback`) | **0.05% – 0.40%** net spread after pool fees | **Block-tick driven (High latency sensitivity)**: Uses `Multicall3` single-RPC batching and on-chain `quotePathOnChain` soft-abort guards (`arXiv:2606.00720v1`). | `bot/opportunity_scanner.py`, `bot/profit_calculator.py`, `bot/paper_trading_logger.py` |
+
+---
+
+## 3. Operational & Smart-Contract Risk Disclosure
+
+Operating flash-loan arbitrage, speculative OEV liquidation, intent-filling, or keeper bots involves real financial and technical risks, even when flash-loan or callback principal is borrowed atomically:
+1. **Reverted & Soft-Aborted Transaction Gas Drain**: If a competing searcher captures an opportunity earlier in the same 250ms Arbitrum block, or if a speculative cross-chain oracle update does not land as projected, your transaction will either soft-abort or revert, consuming **L2 execution gas plus L1 calldata posting fees** in ETH from your executor wallet.
+2. **State Drift Between Scan and Inclusion**: A route, Dutch-auction order, or liquidation that evaluates as `ESTIMATED_NET_POSITIVE_UNVERIFIED` or passes `PRELIMINARY_CALL_CHECK` at block `N` is **not guaranteed** to remain profitable when your transaction is sequenced in block `N + 1`. Always use `bot/paper_trading_logger.py` to measure `next_block_persistence_rate` before risking gas.
+3. **Illiquid ("Zombie") Collateral & Token Tax Risks**: Seizing collateral on lending markets with shallow DEX exit liquidity or interacting with non-standard fee-on-transfer tokens can cause repayment reverts.
+4. **RPC Latency & Rate-Limiting**: Public RPC endpoints can rate-limit or lag behind the Arbitrum sequencer feed (`wss://arb1.arbitrum.io/feed`), resulting in stale reads.
+
+---
+
+## 4. Quickstart: Offline Validation, 31-Test Suite & Paper-Trading Logger
+
+### Step 1 — Run the Full 31-Test Automated Verification Suite
+```bash
+bash scripts/run_bot.sh
+```
+This runs:
+- `python3 bot/opportunity_scanner.py --validate-only` (offline schema, checksum, placeholder, and pair-orientation check)
+- `python3 -m unittest tests/test_remediation_suite.py -v` (23 tests verifying Findings 1–10 + v3.4/v3.5 Multicall3, NodeInterface gas, Aave V3 liquidations, keeper bounties, persistence scoring, Cross-Chain Speculative OEV, and UniswapX / V4 callbacks)
+- `python3 -m unittest tests/test_suite_v3.py -v` (8 tests verifying mathematical & static Solidity invariants)
+- `python3 bot/scanner_stub.py` (deterministic pinned-block read-only scan output with `Multicall3` batching)
+
+### Step 2 — Run a Live Read-Only Pinned-Block Scan on Arbitrum One
+```bash
+export ARBITRUM_RPC_URL="https://arb1.arbitrum.io/rpc"
+python3 bot/opportunity_scanner.py --config config/arbitrum_pools.json --rpc-url "$ARBITRUM_RPC_URL"
+```
+
+### Step 3 — Run a Multi-Cycle Paper-Trading Persistence Campaign (Before Any Deployment)
+```bash
+python3 bot/paper_trading_logger.py \
+  --config config/arbitrum_pools.json \
+  --rpc-url "$ARBITRUM_RPC_URL" \
+  --cycles 20 \
+  --interval-sec 1.0 \
+  --output-jsonl logs/paper_trading_arbitrum.jsonl
+```
+Only proceed to local Anvil fork simulation if the scorecard outputs `"verdict": "READY_FOR_FORK_SIM"`.

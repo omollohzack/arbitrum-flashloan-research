@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safe v3.2 Multi-Chain Launcher for Arbitrum One, Base & Optimism
-MODE="${MODE:-dry-run}"
-CHAIN="${CHAIN:-arbitrum}"
-BOT_FILE="${BOT_FILE:-bot/arbitrum_flash_bot.py}"
-TEST_FILE="${TEST_FILE:-tests/test_suite_v3.py}"
+# scripts/run_bot.sh — Read-Only Validation, Multi-Strategy, Cross-Chain OEV & Persistence Suite Runner (v3.5)
+MODE="${MODE:-read-only}"
 
-if [[ ! -f "$BOT_FILE" ]]; then
-  echo "Bot file not found: $BOT_FILE" >&2
-  exit 1
-fi
+echo "[1/4] Validating Arbitrum One (chain_id=42161) pool, Chainlink & UniswapX configuration..."
+python3 bot/opportunity_scanner.py --validate-only
 
-echo "[1/3] Running FlashBot v3.2 self-tests on chain: ${CHAIN}..."
-python3 "$BOT_FILE" --chain "$CHAIN" --self-test
+echo "[2/4] Running 23-test Technical Review, v3.4 & v3.5 Cross-Chain OEV / UniswapX Regression Suite..."
+python3 -m unittest tests/test_remediation_suite.py -v
 
-if [[ -f "$TEST_FILE" ]]; then
-  echo "[2/3] Running automated 8-test unit & security test suite..."
-  python3 "$TEST_FILE"
-fi
+echo "[3/4] Running 8-test Math & Static Security Suite..."
+python3 -m unittest tests/test_suite_v3.py -v
 
-if [[ "$MODE" != "dry-run" ]]; then
-  echo "Refusing non-dry-run mode via default launcher. Set DRY_RUN=false in untracked .env only after fork testing."
-  exit 2
-fi
-
-echo "[3/3] Starting in dry-run mode on ${CHAIN}. No live transactions will be broadcast."
-exec python3 "$BOT_FILE" --chain "$CHAIN" --dry-run
+echo "[4/4] Running deterministic pinned-block Multicall3 read-only scanner harness..."
+python3 bot/scanner_stub.py

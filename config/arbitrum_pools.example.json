@@ -1,0 +1,36 @@
+{
+  "_comment": "EXAMPLE TEMPLATE ONLY. Do not pass this file directly to production runs. Copy to config/arbitrum_pools.json and use verified Arbitrum One (chain_id=42161) addresses.",
+  "is_example_template": true,
+  "chain_id": 42161,
+  "chain_name": "Arbitrum One",
+  "max_block_age_seconds": 30,
+  "quote_notional_amounts_raw": {
+    "USDC": [500000000, 1000000000, 5000000000],
+    "WETH": [200000000000000000, 500000000000000000, 2000000000000000000]
+  },
+  "tokens": {
+    "WETH": {
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "decimals": 18,
+      "symbol": "WETH"
+    },
+    "USDC": {
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "decimals": 6,
+      "symbol": "USDC"
+    }
+  },
+  "pools": [
+    {
+      "pool_id": "example_placeholder_pool_1",
+      "dex": "uniswap_v3",
+      "adapter": "uniswap_v3",
+      "address": "0x0000000000000000000000000000000000000011",
+      "quoter": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+      "token0": "WETH",
+      "token1": "USDC",
+      "fee_bps": 5,
+      "uni_v3_fee": 500
+    }
+  ]
+}

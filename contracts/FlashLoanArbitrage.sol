@@ -2,14 +2,16 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title FlashLoanArbitrage (v3.1 — Multi-Protocol Aave V3 + Morpho Blue + Intra-DEX V3/Algebra Engine)
- * @notice Production-hardened zero-collateral Flash Loan Arbitrage & Liquidation smart contract on Arbitrum One
+ * @title FlashLoanArbitrage (v3.5 — Multi-Protocol OEV + UniswapX Intent Filler + Uniswap V4 Singleton Engine)
+ * @notice Production-hardened zero-collateral Flash Loan Arbitrage, Cross-Chain Speculative OEV Liquidation,
+ *         UniswapX Dutch-Auction Filler, and Uniswap V4 Singleton Flash-Accounting contract on Arbitrum One
  *         incorporating verified mechanisms from:
+ *         - Signals and Spoils: Speculative OEV in Cross-Chain Price Feeds (arXiv:2606.03434v1, June 2026)
+ *         - Uniswap/UniswapX (`IReactorCallback.reactorCallback` zero-capital Dutch auction order filling)
+ *         - Uniswap/v4-core (`IUnlockCallback.unlockCallback` EIP-1153 singleton flash accounting)
  *         - morpho-org/morpho-blue (Morpho.sol native 0%-fee `liquidate` -> `onMorphoLiquidate` flash-liquidation
  *           and `flashLoan` -> `onMorphoFlashLoan` on Arbitrum Morpho Blue 0x6c247b1F6182318877311737BaC0844bAa518F5e)
  *         - hernan-erasmo/overlord-rs (Correlated LST/LRT WETH/wstETH/weETH/rETH/cbETH liquidation execution)
- *         - Bitquery Aug/Sep 2026 Empirical Investigations (Intra-DEX V3/Algebra fee-tier arbitrage & Zombie-Market
- *           collateral swapability protection)
  *         - Wu & Oz (2026, arXiv:2606.00720v1) Route-Confined On-Chain Soft Abort (`quotePathOnChain`)
  */
 
@@ -108,6 +110,52 @@ interface IMorphoLiquidateCallback {
 
 interface IMorphoFlashLoanCallback {
     function onMorphoFlashLoan(uint256 assets, bytes calldata data) external;
+}
+
+/// @notice UniswapX V2 Dutch Order Reactor Interfaces (from Uniswap/UniswapX)
+/// @dev Arbitrum One V2DutchOrderReactor: 0x1bd1aAdc9E230626C44a139d7E70d842749351eb
+struct SignedOrder {
+    bytes order;
+    bytes sig;
+}
+
+struct InputToken {
+    address token;
+    uint256 amount;
+    uint256 maxAmount;
+}
+
+struct OutputToken {
+    address token;
+    uint256 amount;
+    address recipient;
+}
+
+struct ResolvedOrder {
+    address user;
+    uint256 nonce;
+    uint256 deadline;
+    InputToken input;
+    OutputToken[] outputs;
+    bytes sig;
+    bytes32 hash;
+}
+
+interface IReactor {
+    function executeWithCallback(SignedOrder calldata order, bytes calldata callbackData) external payable;
+}
+
+interface IReactorCallback {
+    function reactorCallback(ResolvedOrder[] calldata resolvedOrders, bytes calldata callbackData) external;
+}
+
+/// @notice Uniswap V4 PoolManager Singleton Unlock Interface (EIP-1153 Flash Accounting)
+interface IPoolManagerV4 {
+    function unlock(bytes calldata data) external returns (bytes memory);
+}
+
+interface IUnlockCallback {
+    function unlockCallback(bytes calldata data) external returns (bytes memory);
 }
 
 interface IComet {
@@ -213,13 +261,17 @@ contract FlashLoanArbitrage is
     IFlashLoanRecipient,
     IFlashLoanSimpleReceiver,
     IMorphoLiquidateCallback,
-    IMorphoFlashLoanCallback
+    IMorphoFlashLoanCallback,
+    IReactorCallback,
+    IUnlockCallback
 {
     address public owner;
     address public payoutWallet;
     address public immutable balancerVault;
     address public aavePool;
     address public morphoBlue;
+    address public uniswapXReactor;
+    address public uniswapV4PoolManager;
     uint256 private _unlocked = 1;
 
     enum ActionType {
@@ -281,6 +333,11 @@ contract FlashLoanArbitrage is
         uint256 minProfit;
     }
 
+    struct UniswapXFillCallbackParams {
+        SwapStep[] inputToOutputSwaps;
+        uint256 minProfit;
+    }
+
     struct FlashCallbackData {
         ActionType actionType;
         bytes payload;
@@ -311,6 +368,16 @@ contract FlashLoanArbitrage is
         uint256 netProfit
     );
 
+    event UniswapXOrderFilled(
+        address indexed reactor,
+        bytes32 indexed orderHash,
+        address inputToken,
+        address outputToken,
+        uint256 inputAmount,
+        uint256 requiredOutput,
+        uint256 netFillerProfit
+    );
+
     event SoftAbortTriggered(string reason, uint256 expectedOut, uint256 requiredOut);
     event PayoutWalletUpdated(address indexed oldWallet, address indexed newWallet);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -337,6 +404,7 @@ contract FlashLoanArbitrage is
             ? 0x794a61358D6845594F94dc1DB02A252b5b4814aD
             : _aavePool;
         morphoBlue = 0x6c247b1F6182318877311737BaC0844bAa518F5e;
+        uniswapXReactor = 0x1bd1aAdc9E230626C44a139d7E70d842749351eb;
     }
 
     // =========================================================================
@@ -467,13 +535,6 @@ contract FlashLoanArbitrage is
     //     STRATEGY 2: AAVE V3 & MORPHO BLUE ZERO-CAPITAL LIQUIDATIONS
     // =========================================================================
 
-    /**
-     * @notice Zero-Flash-Loan Morpho Blue Liquidation (`Morpho.liquidate` -> `onMorphoLiquidate`).
-     * @dev As verified in `morpho-org/morpho-blue/src/Morpho.sol`, Morpho transfers `seizedAssets`
-     *      of `collateralToken` to `msg.sender` BEFORE invoking `onMorphoLiquidate(repaidAssets, data)`.
-     *      This allows us to swap the seized collateral into `loanToken` inside the callback and repay
-     *      Morpho with ZERO external flash loan overhead (~90k gas saved) while rejecting Zombie markets!
-     */
     function executeMorphoFlashLiquidation(
         MorphoLiquidationParams calldata params
     ) external onlyOwner nonReentrant returns (bool executed) {
@@ -538,6 +599,104 @@ contract FlashLoanArbitrage is
                 "FlashLoanArbitrage: Morpho flash profit failed"
             );
         }
+    }
+
+    // =========================================================================
+    //     STRATEGY 3: UNISWAPX ZERO-CAPITAL DUTCH AUCTION INTENT FILLING
+    //     (Grounded in Uniswap/UniswapX & Chitra et al. arXiv:2403.02525v1)
+    // =========================================================================
+
+    /**
+     * @notice Fills a signed UniswapX Dutch auction order with ZERO upfront capital and ZERO flash-loan fee.
+     * @dev The UniswapX V2DutchOrderReactor transfers the swapper's `input.token` to this contract FIRST,
+     *      then calls `reactorCallback`, where we route `input.token -> output.token` across Arbitrum DEXs,
+     *      approve the Reactor to pull `outputs[i].amount`, and sweep the net filler surplus to `payoutWallet`.
+     */
+    function executeUniswapXIntentFill(
+        SignedOrder calldata order,
+        UniswapXFillCallbackParams calldata fillParams
+    ) external onlyOwner nonReentrant returns (bool executed) {
+        require(uniswapXReactor != address(0), "FlashLoanArbitrage: Reactor not set");
+        require(fillParams.inputToOutputSwaps.length >= 1, "FlashLoanArbitrage: empty swap path");
+
+        IReactor(uniswapXReactor).executeWithCallback(order, abi.encode(fillParams));
+        return true;
+    }
+
+    function reactorCallback(
+        ResolvedOrder[] calldata resolvedOrders,
+        bytes calldata callbackData
+    ) external override {
+        require(msg.sender == uniswapXReactor, "FlashLoanArbitrage: unauthorized UniswapX reactor");
+        require(resolvedOrders.length == 1, "FlashLoanArbitrage: single order batch expected");
+
+        ResolvedOrder calldata ro = resolvedOrders[0];
+        require(ro.outputs.length >= 1, "FlashLoanArbitrage: missing order output");
+
+        UniswapXFillCallbackParams memory fillParams = abi.decode(callbackData, (UniswapXFillCallbackParams));
+        address inputToken = ro.input.token;
+        uint256 inputReceived = ro.input.amount;
+        address outputToken = ro.outputs[0].token;
+
+        uint256 totalRequiredOut = 0;
+        for (uint256 i = 0; i < ro.outputs.length; i++) {
+            require(ro.outputs[i].token == outputToken, "FlashLoanArbitrage: heterogeneous output tokens");
+            totalRequiredOut += ro.outputs[i].amount;
+        }
+
+        uint256 totalSwappedOut = _executeMultiHopSwaps(inputReceived, fillParams.inputToOutputSwaps);
+        require(
+            totalSwappedOut >= totalRequiredOut + fillParams.minProfit,
+            "FlashLoanArbitrage: UniswapX fill below minProfit"
+        );
+
+        _safeApprove(outputToken, uniswapXReactor, totalRequiredOut);
+
+        uint256 netProfit = totalSwappedOut - totalRequiredOut;
+        if (netProfit > 0) {
+            require(
+                IERC20(outputToken).transfer(payoutWallet, netProfit),
+                "FlashLoanArbitrage: UniswapX profit transfer failed"
+            );
+        }
+
+        emit UniswapXOrderFilled(
+            uniswapXReactor,
+            ro.hash,
+            inputToken,
+            outputToken,
+            inputReceived,
+            totalRequiredOut,
+            netProfit
+        );
+    }
+
+    // =========================================================================
+    //     STRATEGY 4: UNISWAP V4 SINGLETON FLASH ACCOUNTING (`unlockCallback`)
+    // =========================================================================
+
+    function executeUniswapV4SingletonArb(
+        CyclicArbParams calldata params
+    ) external onlyOwner nonReentrant returns (bool executed) {
+        require(uniswapV4PoolManager != address(0), "FlashLoanArbitrage: V4 PoolManager not set");
+        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        _validateRouteContinuity(params.tokenBorrow, params.steps);
+
+        IPoolManagerV4(uniswapV4PoolManager).unlock(abi.encode(params));
+        return true;
+    }
+
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        require(msg.sender == uniswapV4PoolManager, "FlashLoanArbitrage: unauthorized V4 PoolManager");
+        CyclicArbParams memory arb = abi.decode(data, (CyclicArbParams));
+        uint256 startBal = IERC20(arb.tokenBorrow).balanceOf(address(this));
+        uint256 finalBal = _executeMultiHopSwaps(startBal, arb.steps);
+        require(finalBal >= startBal + arb.minProfit, "FlashLoanArbitrage: V4 unlock arb below minProfit");
+        uint256 netProfit = finalBal - startBal;
+        if (netProfit > 0) {
+            require(IERC20(arb.tokenBorrow).transfer(payoutWallet, netProfit), "FlashLoanArbitrage: V4 profit transfer failed");
+        }
+        return abi.encode(netProfit);
     }
 
     function executeBalancerFlashLiquidation(
@@ -942,6 +1101,14 @@ contract FlashLoanArbitrage is
         morphoBlue = _newMorphoBlue;
     }
 
+    function setUniswapXReactor(address _newReactor) external onlyOwner {
+        uniswapXReactor = _newReactor;
+    }
+
+    function setUniswapV4PoolManager(address _newPoolManager) external onlyOwner {
+        uniswapV4PoolManager = _newPoolManager;
+    }
+
     function transferOwnership(address _newOwner) external onlyOwner {
         require(_newOwner != address(0), "FlashLoanArbitrage: zero address");
         emit OwnershipTransferred(owner, _newOwner);
@@ -960,4 +1127,3 @@ contract FlashLoanArbitrage is
 
     receive() external payable {}
 }
-
