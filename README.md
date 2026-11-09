@@ -91,3 +91,19 @@ python3 bot/paper_trading_logger.py \
   --output-jsonl logs/paper_trading_arbitrum.jsonl
 ```
 Only proceed to local Anvil fork simulation if the scorecard outputs `"verdict": "READY_FOR_FORK_SIM"`.
+
+---
+
+## 9. v3.6 Profitability Patch (2026-11-09)
+
+Research-backed changes targeting the measured reasons this suite was
+net-negative — fixed trade sizing, the 5 bps Aave flash fee, negative-EV
+submission, and a Solidity contract that had never compiled. Summary:
+optimal trade sizing and an expected-value execution gate plus zero-fee
+(Balancer/Morpho) flash-loan selection in `bot/route_optimizer.py`, and a
+`FlashLoanArbitrage.sol` that now compiles with solc 0.8.20 and fits the
+24,576-byte deploy limit at 22,720 bytes (via-IR, optimizer runs=1; see
+`scripts/compile_contract.mjs`). Full details, evidence and remaining
+blockers (fork testing, live flash-depth checks, route-universe
+expansion, independent audit): see `PROFITABILITY_CHANGES.md`. These
+changes do not establish profitability; the scanner remains read-only.

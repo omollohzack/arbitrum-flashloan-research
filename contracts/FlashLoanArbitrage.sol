@@ -13,6 +13,17 @@ pragma solidity ^0.8.20;
  *           and `flashLoan` -> `onMorphoFlashLoan` on Arbitrum Morpho Blue 0x6c247b1F6182318877311737BaC0844bAa518F5e)
  *         - hernan-erasmo/overlord-rs (Correlated LST/LRT WETH/wstETH/weETH/rETH/cbETH liquidation execution)
  *         - Wu & Oz (2026, arXiv:2606.00720v1) Route-Confined On-Chain Soft Abort (`quotePathOnChain`)
+ *
+ * v3.6 profitability patch (2026-11-09):
+ * - `_executeMultiHopSwaps` now dispatches to one internal function per swap
+ *   type; the previous single-function version failed a standard solc
+ *   0.8.20 compile with "Stack too deep" at the Camelot V2 branch.
+ * - Revert strings were removed (conditions unchanged) to fit the 24,576-byte
+ *   deploy limit. Verified with solc 0.8.20, via-IR + optimizer runs=1:
+ *   22,720 bytes deployed, 0 errors, 0 warnings (see
+ *   `scripts/compile_contract.mjs`). A standard (non-via-IR) compile also
+ *   passes, but at ~27.2 KB it exceeds the deploy limit, so the via-IR
+ *   settings in that script are the deployable configuration.
  */
 
 interface IERC20 {
@@ -383,12 +394,12 @@ contract FlashLoanArbitrage is
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "FlashLoanArbitrage: caller is not owner");
+        require(msg.sender == owner);
         _;
     }
 
     modifier nonReentrant() {
-        require(_unlocked == 1, "FlashLoanArbitrage: reentrant call");
+        require(_unlocked == 1);
         _unlocked = 2;
         _;
         _unlocked = 1;
@@ -416,7 +427,7 @@ contract FlashLoanArbitrage is
         CyclicArbParams calldata params,
         bool softAbortIfUnprofitable
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        require(params.steps.length >= 2);
         _validateRouteContinuity(params.tokenBorrow, params.steps);
 
         if (softAbortIfUnprofitable) {
@@ -449,8 +460,8 @@ contract FlashLoanArbitrage is
         CyclicArbParams calldata params,
         bool softAbortIfUnprofitable
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(morphoBlue != address(0), "FlashLoanArbitrage: Morpho not set");
-        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        require(morphoBlue != address(0));
+        require(params.steps.length >= 2);
         _validateRouteContinuity(params.tokenBorrow, params.steps);
 
         if (softAbortIfUnprofitable) {
@@ -474,8 +485,8 @@ contract FlashLoanArbitrage is
         CyclicArbParams calldata params,
         bool softAbortIfUnprofitable
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(aavePool != address(0), "FlashLoanArbitrage: Aave Pool not set");
-        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        require(aavePool != address(0));
+        require(params.steps.length >= 2);
         _validateRouteContinuity(params.tokenBorrow, params.steps);
 
         if (softAbortIfUnprofitable) {
@@ -502,8 +513,8 @@ contract FlashLoanArbitrage is
         CyclicArbParams calldata params,
         bool softAbortIfUnprofitable
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(flashPool != address(0), "FlashLoanArbitrage: zero flashPool");
-        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        require(flashPool != address(0));
+        require(params.steps.length >= 2);
         _validateRouteContinuity(params.tokenBorrow, params.steps);
 
         if (softAbortIfUnprofitable) {
@@ -538,7 +549,7 @@ contract FlashLoanArbitrage is
     function executeMorphoFlashLiquidation(
         MorphoLiquidationParams calldata params
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(morphoBlue != address(0), "FlashLoanArbitrage: Morpho not set");
+        require(morphoBlue != address(0));
 
         bytes memory callbackData = abi.encode(params);
         IMorpho(morphoBlue).liquidate(
@@ -552,16 +563,15 @@ contract FlashLoanArbitrage is
     }
 
     function onMorphoLiquidate(uint256 repaidAssets, bytes calldata data) external override {
-        require(msg.sender == morphoBlue, "FlashLoanArbitrage: unauthorized Morpho caller");
+        require(msg.sender == morphoBlue);
         MorphoLiquidationParams memory params = abi.decode(data, (MorphoLiquidationParams));
 
         uint256 seizedBalance = IERC20(params.marketParams.collateralToken).balanceOf(address(this));
-        require(seizedBalance > 0, "FlashLoanArbitrage: zero Morpho collateral seized");
+        require(seizedBalance > 0);
 
         uint256 loanTokenOut = _executeMultiHopSwaps(seizedBalance, params.collateralToLoanSwaps);
         require(
-            loanTokenOut >= repaidAssets + params.minProfit,
-            "FlashLoanArbitrage: Morpho liq below minProfit (or zombie collateral)"
+            loanTokenOut >= repaidAssets + params.minProfit
         );
 
         _safeApprove(params.marketParams.loanToken, morphoBlue, repaidAssets);
@@ -569,8 +579,7 @@ contract FlashLoanArbitrage is
         uint256 netProfit = loanTokenOut - repaidAssets;
         if (netProfit > 0) {
             require(
-                IERC20(params.marketParams.loanToken).transfer(payoutWallet, netProfit),
-                "FlashLoanArbitrage: Morpho profit transfer failed"
+                IERC20(params.marketParams.loanToken).transfer(payoutWallet, netProfit)
             );
         }
 
@@ -585,7 +594,7 @@ contract FlashLoanArbitrage is
     }
 
     function onMorphoFlashLoan(uint256 assets, bytes calldata data) external override {
-        require(msg.sender == morphoBlue, "FlashLoanArbitrage: unauthorized Morpho caller");
+        require(msg.sender == morphoBlue);
         FlashCallbackData memory decoded = abi.decode(data, (FlashCallbackData));
         CyclicArbParams memory arb = abi.decode(decoded.payload, (CyclicArbParams));
 
@@ -595,8 +604,7 @@ contract FlashLoanArbitrage is
         uint256 netProfit = finalBalance - assets;
         if (netProfit > 0) {
             require(
-                IERC20(arb.tokenBorrow).transfer(payoutWallet, netProfit),
-                "FlashLoanArbitrage: Morpho flash profit failed"
+                IERC20(arb.tokenBorrow).transfer(payoutWallet, netProfit)
             );
         }
     }
@@ -616,8 +624,8 @@ contract FlashLoanArbitrage is
         SignedOrder calldata order,
         UniswapXFillCallbackParams calldata fillParams
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(uniswapXReactor != address(0), "FlashLoanArbitrage: Reactor not set");
-        require(fillParams.inputToOutputSwaps.length >= 1, "FlashLoanArbitrage: empty swap path");
+        require(uniswapXReactor != address(0));
+        require(fillParams.inputToOutputSwaps.length >= 1);
 
         IReactor(uniswapXReactor).executeWithCallback(order, abi.encode(fillParams));
         return true;
@@ -627,11 +635,11 @@ contract FlashLoanArbitrage is
         ResolvedOrder[] calldata resolvedOrders,
         bytes calldata callbackData
     ) external override {
-        require(msg.sender == uniswapXReactor, "FlashLoanArbitrage: unauthorized UniswapX reactor");
-        require(resolvedOrders.length == 1, "FlashLoanArbitrage: single order batch expected");
+        require(msg.sender == uniswapXReactor);
+        require(resolvedOrders.length == 1);
 
         ResolvedOrder calldata ro = resolvedOrders[0];
-        require(ro.outputs.length >= 1, "FlashLoanArbitrage: missing order output");
+        require(ro.outputs.length >= 1);
 
         UniswapXFillCallbackParams memory fillParams = abi.decode(callbackData, (UniswapXFillCallbackParams));
         address inputToken = ro.input.token;
@@ -640,14 +648,13 @@ contract FlashLoanArbitrage is
 
         uint256 totalRequiredOut = 0;
         for (uint256 i = 0; i < ro.outputs.length; i++) {
-            require(ro.outputs[i].token == outputToken, "FlashLoanArbitrage: heterogeneous output tokens");
+            require(ro.outputs[i].token == outputToken);
             totalRequiredOut += ro.outputs[i].amount;
         }
 
         uint256 totalSwappedOut = _executeMultiHopSwaps(inputReceived, fillParams.inputToOutputSwaps);
         require(
-            totalSwappedOut >= totalRequiredOut + fillParams.minProfit,
-            "FlashLoanArbitrage: UniswapX fill below minProfit"
+            totalSwappedOut >= totalRequiredOut + fillParams.minProfit
         );
 
         _safeApprove(outputToken, uniswapXReactor, totalRequiredOut);
@@ -655,8 +662,7 @@ contract FlashLoanArbitrage is
         uint256 netProfit = totalSwappedOut - totalRequiredOut;
         if (netProfit > 0) {
             require(
-                IERC20(outputToken).transfer(payoutWallet, netProfit),
-                "FlashLoanArbitrage: UniswapX profit transfer failed"
+                IERC20(outputToken).transfer(payoutWallet, netProfit)
             );
         }
 
@@ -678,8 +684,8 @@ contract FlashLoanArbitrage is
     function executeUniswapV4SingletonArb(
         CyclicArbParams calldata params
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(uniswapV4PoolManager != address(0), "FlashLoanArbitrage: V4 PoolManager not set");
-        require(params.steps.length >= 2, "FlashLoanArbitrage: need >= 2 hops");
+        require(uniswapV4PoolManager != address(0));
+        require(params.steps.length >= 2);
         _validateRouteContinuity(params.tokenBorrow, params.steps);
 
         IPoolManagerV4(uniswapV4PoolManager).unlock(abi.encode(params));
@@ -687,14 +693,14 @@ contract FlashLoanArbitrage is
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
-        require(msg.sender == uniswapV4PoolManager, "FlashLoanArbitrage: unauthorized V4 PoolManager");
+        require(msg.sender == uniswapV4PoolManager);
         CyclicArbParams memory arb = abi.decode(data, (CyclicArbParams));
         uint256 startBal = IERC20(arb.tokenBorrow).balanceOf(address(this));
         uint256 finalBal = _executeMultiHopSwaps(startBal, arb.steps);
-        require(finalBal >= startBal + arb.minProfit, "FlashLoanArbitrage: V4 unlock arb below minProfit");
+        require(finalBal >= startBal + arb.minProfit);
         uint256 netProfit = finalBal - startBal;
         if (netProfit > 0) {
-            require(IERC20(arb.tokenBorrow).transfer(payoutWallet, netProfit), "FlashLoanArbitrage: V4 profit transfer failed");
+            require(IERC20(arb.tokenBorrow).transfer(payoutWallet, netProfit));
         }
         return abi.encode(netProfit);
     }
@@ -703,7 +709,7 @@ contract FlashLoanArbitrage is
         LiquidationParams calldata params,
         bool softCheckHealthFactor
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(aavePool != address(0), "FlashLoanArbitrage: Aave Pool not set");
+        require(aavePool != address(0));
 
         if (softCheckHealthFactor) {
             (, , , , , uint256 hf) = IAaveV3Pool(aavePool).getUserAccountData(params.borrower);
@@ -729,10 +735,9 @@ contract FlashLoanArbitrage is
     function executeBalancerBatchFlashLiquidation(
         BatchLiquidationParams calldata params
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(aavePool != address(0), "FlashLoanArbitrage: Aave Pool not set");
+        require(aavePool != address(0));
         require(
-            params.borrowers.length == params.debtsToCover.length && params.borrowers.length > 0,
-            "FlashLoanArbitrage: array length mismatch"
+            params.borrowers.length == params.debtsToCover.length && params.borrowers.length > 0
         );
 
         uint256 totalDebt = 0;
@@ -757,8 +762,8 @@ contract FlashLoanArbitrage is
         CompoundLiquidationParams calldata params,
         bool softCheckLiquidatable
     ) external onlyOwner nonReentrant returns (bool executed) {
-        require(params.cometMarket != address(0), "FlashLoanArbitrage: zero Comet address");
-        require(params.borrowers.length > 0, "FlashLoanArbitrage: empty borrowers");
+        require(params.cometMarket != address(0));
+        require(params.borrowers.length > 0);
 
         if (softCheckLiquidatable) {
             bool anyLiquidatable = false;
@@ -793,7 +798,7 @@ contract FlashLoanArbitrage is
         uint256[] memory feeAmounts,
         bytes memory userData
     ) external override {
-        require(msg.sender == balancerVault, "FlashLoanArbitrage: unauthorized Balancer caller");
+        require(msg.sender == balancerVault);
 
         address asset = address(tokens[0]);
         uint256 amountBorrowed = amounts[0];
@@ -801,11 +806,11 @@ contract FlashLoanArbitrage is
 
         uint256 finalBalance = _dispatchOperation(asset, amountBorrowed, totalRepay, userData);
 
-        require(tokens[0].transfer(balancerVault, totalRepay), "FlashLoanArbitrage: Balancer repayment failed");
+        require(tokens[0].transfer(balancerVault, totalRepay));
 
         uint256 netProfit = finalBalance - totalRepay;
         if (netProfit > 0) {
-            require(tokens[0].transfer(payoutWallet, netProfit), "FlashLoanArbitrage: profit transfer failed");
+            require(tokens[0].transfer(payoutWallet, netProfit));
         }
     }
 
@@ -816,8 +821,8 @@ contract FlashLoanArbitrage is
         address initiator,
         bytes calldata params
     ) external override returns (bool) {
-        require(msg.sender == aavePool, "FlashLoanArbitrage: unauthorized Aave caller");
-        require(initiator == address(this), "FlashLoanArbitrage: unauthorized initiator");
+        require(msg.sender == aavePool);
+        require(initiator == address(this));
 
         uint256 totalRepay = amount + premium;
         uint256 finalBalance = _dispatchOperation(asset, amount, totalRepay, params);
@@ -826,14 +831,14 @@ contract FlashLoanArbitrage is
 
         uint256 netProfit = finalBalance - totalRepay;
         if (netProfit > 0) {
-            require(IERC20(asset).transfer(payoutWallet, netProfit), "FlashLoanArbitrage: profit transfer failed");
+            require(IERC20(asset).transfer(payoutWallet, netProfit));
         }
         return true;
     }
 
     function uniswapV3FlashCallback(uint256 fee0, uint256 fee1, bytes calldata data) external {
         UniV3FlashCallbackData memory decoded = abi.decode(data, (UniV3FlashCallbackData));
-        require(msg.sender == decoded.pool, "FlashLoanArbitrage: unauthorized UniV3 pool");
+        require(msg.sender == decoded.pool);
 
         uint256 fee = fee0 > 0 ? fee0 : fee1;
         uint256 totalRepay = decoded.amountBorrowed + fee;
@@ -845,11 +850,11 @@ contract FlashLoanArbitrage is
             abi.encode(decoded.innerData)
         );
 
-        require(IERC20(decoded.tokenBorrow).transfer(decoded.pool, totalRepay), "FlashLoanArbitrage: UniV3 repayment failed");
+        require(IERC20(decoded.tokenBorrow).transfer(decoded.pool, totalRepay));
 
         uint256 netProfit = finalBalance - totalRepay;
         if (netProfit > 0) {
-            require(IERC20(decoded.tokenBorrow).transfer(payoutWallet, netProfit), "FlashLoanArbitrage: profit transfer failed");
+            require(IERC20(decoded.tokenBorrow).transfer(payoutWallet, netProfit));
         }
     }
 
@@ -864,7 +869,7 @@ contract FlashLoanArbitrage is
         if (data.actionType == ActionType.CYCLIC_ARBITRAGE) {
             CyclicArbParams memory arb = abi.decode(data.payload, (CyclicArbParams));
             finalBalance = _executeMultiHopSwaps(amountBorrowed, arb.steps);
-            require(finalBalance >= totalRepay + arb.minProfit, "FlashLoanArbitrage: cyclic arb below minProfit");
+            require(finalBalance >= totalRepay + arb.minProfit);
             emit CyclicArbitrageExecuted(msg.sender, borrowedAsset, amountBorrowed, arb.steps.length, finalBalance - totalRepay, payoutWallet);
         } else if (data.actionType == ActionType.SINGLE_LIQUIDATION) {
             LiquidationParams memory liq = abi.decode(data.payload, (LiquidationParams));
@@ -875,12 +880,12 @@ contract FlashLoanArbitrage is
             _safeApprove(liq.debtAsset, aavePool, 0);
 
             uint256 seizedCollateral = IERC20(liq.collateralAsset).balanceOf(address(this)) - collateralBefore;
-            require(seizedCollateral > 0, "FlashLoanArbitrage: zero collateral seized");
+            require(seizedCollateral > 0);
 
             _executeMultiHopSwaps(seizedCollateral, liq.collateralToDebtSwaps);
             finalBalance = IERC20(liq.debtAsset).balanceOf(address(this));
 
-            require(finalBalance >= totalRepay + liq.minProfit, "FlashLoanArbitrage: liquidation below minProfit");
+            require(finalBalance >= totalRepay + liq.minProfit);
             emit FlashLiquidationExecuted(aavePool, liq.borrower, liq.collateralAsset, liq.debtAsset, liq.debtToCover, finalBalance - totalRepay);
         } else if (data.actionType == ActionType.BATCH_LIQUIDATION) {
             BatchLiquidationParams memory batch = abi.decode(data.payload, (BatchLiquidationParams));
@@ -896,11 +901,11 @@ contract FlashLoanArbitrage is
             _safeApprove(batch.debtAsset, aavePool, 0);
 
             uint256 totalCollateral = IERC20(batch.collateralAsset).balanceOf(address(this)) - collateralBefore;
-            require(totalCollateral > 0, "FlashLoanArbitrage: no positions liquidated in batch");
+            require(totalCollateral > 0);
 
             _executeMultiHopSwaps(totalCollateral, batch.collateralToDebtSwaps);
             finalBalance = IERC20(batch.debtAsset).balanceOf(address(this));
-            require(finalBalance >= totalRepay + batch.minProfit, "FlashLoanArbitrage: batch liquidation below minProfit");
+            require(finalBalance >= totalRepay + batch.minProfit);
         } else if (data.actionType == ActionType.COMPOUND_V3_LIQUIDATION) {
             CompoundLiquidationParams memory comp = abi.decode(data.payload, (CompoundLiquidationParams));
             uint256 collateralBefore = IERC20(comp.collateralAsset).balanceOf(address(this));
@@ -911,11 +916,11 @@ contract FlashLoanArbitrage is
             _safeApprove(comp.baseAsset, comp.cometMarket, 0);
 
             uint256 seized = IERC20(comp.collateralAsset).balanceOf(address(this)) - collateralBefore;
-            require(seized > 0, "FlashLoanArbitrage: zero Compound collateral bought");
+            require(seized > 0);
 
             _executeMultiHopSwaps(seized, comp.collateralToBaseSwaps);
             finalBalance = IERC20(comp.baseAsset).balanceOf(address(this));
-            require(finalBalance >= totalRepay + comp.minProfit, "FlashLoanArbitrage: Compound liquidation below minProfit");
+            require(finalBalance >= totalRepay + comp.minProfit);
             emit FlashLiquidationExecuted(comp.cometMarket, comp.borrowers[0], comp.collateralAsset, comp.baseAsset, comp.baseAmountToSpend, finalBalance - totalRepay);
         }
     }
@@ -927,73 +932,100 @@ contract FlashLoanArbitrage is
             SwapStep memory step = steps[i];
             uint256 outBefore = IERC20(step.tokenOut).balanceOf(address(this));
 
-            if (step.swapType == 0) {
-                _safeApprove(step.tokenIn, step.target, currentAmount);
-                address[] memory path = new address[](2);
-                path[0] = step.tokenIn;
-                path[1] = step.tokenOut;
-                IUniswapV2Router02(step.target).swapExactTokensForTokens(currentAmount, 1, path, address(this), block.timestamp);
-                _safeApprove(step.tokenIn, step.target, 0);
-            } else if (step.swapType == 1) {
-                _safeApprove(step.tokenIn, step.target, currentAmount);
-                ISwapRouterV3.ExactInputSingleParams memory v3Params = ISwapRouterV3.ExactInputSingleParams({
-                    tokenIn: step.tokenIn,
-                    tokenOut: step.tokenOut,
-                    fee: step.fee,
-                    recipient: address(this),
-                    deadline: block.timestamp,
-                    amountIn: currentAmount,
-                    amountOutMinimum: 1,
-                    sqrtPriceLimitX96: 0
-                });
-                ISwapRouterV3(step.target).exactInputSingle(v3Params);
-                _safeApprove(step.tokenIn, step.target, 0);
-            } else if (step.swapType == 2) {
-                IUniswapV2Pair pair = IUniswapV2Pair(step.target);
-                (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
-                address token0 = pair.token0();
-                uint256 feeBps = step.fee == 0 ? 9970 : uint256(step.fee);
-                (uint256 resIn, uint256 resOut) = step.tokenIn == token0
-                    ? (uint256(reserve0), uint256(reserve1))
-                    : (uint256(reserve1), uint256(reserve0));
-                uint256 amountInWithFee = currentAmount * feeBps;
-                uint256 amountOut = (amountInWithFee * resOut) / ((resIn * 10000) + amountInWithFee);
-                require(IERC20(step.tokenIn).transfer(step.target, currentAmount), "DirectV2: transfer failed");
-                (uint256 amount0Out, uint256 amount1Out) = step.tokenIn == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
-                pair.swap(amount0Out, amount1Out, address(this), new bytes(0));
-            } else if (step.swapType == 3) {
-                ICamelotPair pair = ICamelotPair(step.target);
-                (uint112 r0, uint112 r1, uint16 fee0, uint16 fee1) = pair.getReserves();
-                address token0 = pair.token0();
-                (uint256 resIn, uint256 resOut, uint256 feePct) = step.tokenIn == token0
-                    ? (uint256(r0), uint256(r1), uint256(fee0))
-                    : (uint256(r1), uint256(r0), uint256(fee1));
-                uint256 amountInWithFee = currentAmount * (100000 - feePct);
-                uint256 amountOut = (amountInWithFee * resOut) / ((resIn * 100000) + amountInWithFee);
-                require(IERC20(step.tokenIn).transfer(step.target, currentAmount), "CamelotV2: transfer failed");
-                (uint256 amount0Out, uint256 amount1Out) = step.tokenIn == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
-                pair.swap(amount0Out, amount1Out, address(this), new bytes(0));
-            } else if (step.swapType == 4) {
-                _safeApprove(step.tokenIn, step.target, currentAmount);
-                IAlgebraSwapRouter.ExactInputSingleParams memory algParams = IAlgebraSwapRouter.ExactInputSingleParams({
-                    tokenIn: step.tokenIn,
-                    tokenOut: step.tokenOut,
-                    recipient: address(this),
-                    deadline: block.timestamp,
-                    amountIn: currentAmount,
-                    amountOutMinimum: 1,
-                    limitSqrtPrice: 0
-                });
-                IAlgebraSwapRouter(step.target).exactInputSingle(algParams);
-                _safeApprove(step.tokenIn, step.target, 0);
-            } else {
-                revert("FlashLoanArbitrage: unsupported swapType");
-            }
+            _executeSwapStep(step, currentAmount);
 
             uint256 outAfter = IERC20(step.tokenOut).balanceOf(address(this));
-            require(outAfter > outBefore, "FlashLoanArbitrage: zero hop output");
+            require(outAfter > outBefore);
             currentAmount = outAfter - outBefore;
         }
+    }
+
+    // Each swap type lives in its own internal function. Keeping all five
+    // branches (and their locals) in one function caused solc "Stack too
+    // deep" at the Camelot V2 branch under a standard (non-via-IR) compile.
+    function _executeSwapStep(SwapStep memory step, uint256 amountIn) internal {
+        if (step.swapType == 0) {
+            _swapV2Router(step, amountIn);
+        } else if (step.swapType == 1) {
+            _swapV3Router(step, amountIn);
+        } else if (step.swapType == 2) {
+            _swapDirectV2Pair(step, amountIn);
+        } else if (step.swapType == 3) {
+            _swapCamelotV2Pair(step, amountIn);
+        } else if (step.swapType == 4) {
+            _swapAlgebraRouter(step, amountIn);
+        } else {
+            revert();
+        }
+    }
+
+    function _swapV2Router(SwapStep memory step, uint256 amountIn) internal {
+        _safeApprove(step.tokenIn, step.target, amountIn);
+        address[] memory path = new address[](2);
+        path[0] = step.tokenIn;
+        path[1] = step.tokenOut;
+        IUniswapV2Router02(step.target).swapExactTokensForTokens(amountIn, 1, path, address(this), block.timestamp);
+        _safeApprove(step.tokenIn, step.target, 0);
+    }
+
+    function _swapV3Router(SwapStep memory step, uint256 amountIn) internal {
+        _safeApprove(step.tokenIn, step.target, amountIn);
+        ISwapRouterV3.ExactInputSingleParams memory v3Params = ISwapRouterV3.ExactInputSingleParams({
+            tokenIn: step.tokenIn,
+            tokenOut: step.tokenOut,
+            fee: step.fee,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: amountIn,
+            amountOutMinimum: 1,
+            sqrtPriceLimitX96: 0
+        });
+        ISwapRouterV3(step.target).exactInputSingle(v3Params);
+        _safeApprove(step.tokenIn, step.target, 0);
+    }
+
+    function _swapDirectV2Pair(SwapStep memory step, uint256 amountIn) internal {
+        IUniswapV2Pair pair = IUniswapV2Pair(step.target);
+        (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
+        address token0 = pair.token0();
+        uint256 feeBps = step.fee == 0 ? 9970 : uint256(step.fee);
+        (uint256 resIn, uint256 resOut) = step.tokenIn == token0
+            ? (uint256(reserve0), uint256(reserve1))
+            : (uint256(reserve1), uint256(reserve0));
+        uint256 amountInWithFee = amountIn * feeBps;
+        uint256 amountOut = (amountInWithFee * resOut) / ((resIn * 10000) + amountInWithFee);
+        require(IERC20(step.tokenIn).transfer(step.target, amountIn));
+        (uint256 amount0Out, uint256 amount1Out) = step.tokenIn == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
+        pair.swap(amount0Out, amount1Out, address(this), new bytes(0));
+    }
+
+    function _swapCamelotV2Pair(SwapStep memory step, uint256 amountIn) internal {
+        ICamelotPair pair = ICamelotPair(step.target);
+        (uint112 r0, uint112 r1, uint16 fee0, uint16 fee1) = pair.getReserves();
+        address token0 = pair.token0();
+        (uint256 resIn, uint256 resOut, uint256 feePct) = step.tokenIn == token0
+            ? (uint256(r0), uint256(r1), uint256(fee0))
+            : (uint256(r1), uint256(r0), uint256(fee1));
+        uint256 amountInWithFee = amountIn * (100000 - feePct);
+        uint256 amountOut = (amountInWithFee * resOut) / ((resIn * 100000) + amountInWithFee);
+        require(IERC20(step.tokenIn).transfer(step.target, amountIn));
+        (uint256 amount0Out, uint256 amount1Out) = step.tokenIn == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
+        pair.swap(amount0Out, amount1Out, address(this), new bytes(0));
+    }
+
+    function _swapAlgebraRouter(SwapStep memory step, uint256 amountIn) internal {
+        _safeApprove(step.tokenIn, step.target, amountIn);
+        IAlgebraSwapRouter.ExactInputSingleParams memory algParams = IAlgebraSwapRouter.ExactInputSingleParams({
+            tokenIn: step.tokenIn,
+            tokenOut: step.tokenOut,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: amountIn,
+            amountOutMinimum: 1,
+            limitSqrtPrice: 0
+        });
+        IAlgebraSwapRouter(step.target).exactInputSingle(algParams);
+        _safeApprove(step.tokenIn, step.target, 0);
     }
 
     function quotePathOnChain(
@@ -1073,22 +1105,22 @@ contract FlashLoanArbitrage is
     }
 
     function _validateRouteContinuity(address tokenBorrow, SwapStep[] calldata steps) internal pure {
-        require(steps[0].tokenIn == tokenBorrow, "FlashLoanArbitrage: first hop must start with tokenBorrow");
-        require(steps[steps.length - 1].tokenOut == tokenBorrow, "FlashLoanArbitrage: final hop must return to tokenBorrow");
+        require(steps[0].tokenIn == tokenBorrow);
+        require(steps[steps.length - 1].tokenOut == tokenBorrow);
         for (uint256 i = 0; i + 1 < steps.length; i++) {
-            require(steps[i].tokenOut == steps[i + 1].tokenIn, "FlashLoanArbitrage: discontinuous hop tokens");
+            require(steps[i].tokenOut == steps[i + 1].tokenIn);
         }
     }
 
     function _safeApprove(address token, address spender, uint256 amount) internal {
         IERC20(token).approve(spender, 0);
         if (amount > 0) {
-            require(IERC20(token).approve(spender, amount), "FlashLoanArbitrage: approve failed");
+            require(IERC20(token).approve(spender, amount));
         }
     }
 
     function setPayoutWallet(address _newPayoutWallet) external onlyOwner {
-        require(_newPayoutWallet != address(0), "FlashLoanArbitrage: zero address");
+        require(_newPayoutWallet != address(0));
         emit PayoutWalletUpdated(payoutWallet, _newPayoutWallet);
         payoutWallet = _newPayoutWallet;
     }
@@ -1110,19 +1142,19 @@ contract FlashLoanArbitrage is
     }
 
     function transferOwnership(address _newOwner) external onlyOwner {
-        require(_newOwner != address(0), "FlashLoanArbitrage: zero address");
+        require(_newOwner != address(0));
         emit OwnershipTransferred(owner, _newOwner);
         owner = _newOwner;
     }
 
     function rescueTokens(address token, uint256 amount) external onlyOwner {
-        require(IERC20(token).transfer(payoutWallet, amount), "FlashLoanArbitrage: token rescue failed");
+        require(IERC20(token).transfer(payoutWallet, amount));
     }
 
     function rescueETH() external onlyOwner {
         uint256 bal = address(this).balance;
         (bool success, ) = payable(payoutWallet).call{value: bal}("");
-        require(success, "FlashLoanArbitrage: ETH rescue failed");
+        require(success);
     }
 
     receive() external payable {}
