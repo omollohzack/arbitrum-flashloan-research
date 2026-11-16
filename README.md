@@ -1,12 +1,14 @@
-# Arbitrum One Read-Only Opportunity Scanner, Cross-Chain Speculative OEV, UniswapX Intent Filler & Flash-Loan Research Suite (v3.5)
+# Arbitrum One Read-Only Opportunity Scanner, Cross-Chain Speculative OEV, UniswapX Intent Filler & Flash-Loan Research Suite (v3.6)
 
 ## 1. Project Scope & Architecture Classification
 
 This repository provides a **verification-first, read-only Arbitrum One (`chain_id = 42161`) and Optimism (`chain_id = 10`) opportunity discovery, cross-chain oracle lead-lag monitor, Dutch-auction intent evaluator, cost-accounting, and pinned-block simulation suite**, paired with reference smart-contract (`contracts/FlashLoanArbitrage.sol`) and multi-protocol liquidation/keeper research modules.
 
+> **Headline finding (verified, published):** live checks across 33 route/size combinations on the current pool universe found **zero profitable routes** — the best evaluated to −$1.08 — and the textbook WETH/USDC two-hop is structurally net-negative after fees. Expected earnings on the current universe are **$0**; this is a research and measurement suite, not a profit system. Full post-mortem: [I Built a Flash-Loan Arbitrage Bot on Arbitrum — Then Proved It Loses Money](https://dev.to/omollohzack/i-built-a-flash-loan-arbitrage-bot-on-arbitrum-then-proved-it-loses-money-1b66).
+
 To maintain strict engineering transparency, every component in this repository is classified into one of three explicit categories:
 
-### A. Observed & Tested (Verified by 31 Automated Unit & Deterministic Pinned-Block Tests)
+### A. Observed & Tested (Verified by 38 Automated Unit & Deterministic Pinned-Block Tests)
 1. **Fail-Closed Configuration & On-Chain Metadata Validation (`bot/opportunity_scanner.py`)**:
    - Rejects template configs (`is_example_template = true`), zero/placeholder addresses (`0x000...0001`), duplicate pools, and mismatched pair orientations before making network calls.
    - Verifies `eth_chainId == 42161` (Arbitrum One), checks block freshness (`max_block_age_seconds`), confirms deployed contract bytecode (`eth_getCode`) at the pinned block, and verifies on-chain token `decimals()` and pool `token0()` / `token1()`.
@@ -40,11 +42,11 @@ To maintain strict engineering transparency, every component in this repository 
 
 ---
 
-## 2. Empirical Research: Most Efficient Zero-to-Minimal Capital Smart Contract Strategies (v3.5)
+## 2. Empirical Research: Zero-to-Minimal Capital Smart Contract Strategies — Literature Survey and Measured Findings (v3.6)
 
-Based on peer-reviewed empirical studies ([`arXiv:2606.03434v1` *Signals and Spoils*](https://arxiv.org/html/2606.03434v1); [Chitra et al. `arXiv:2403.02525v1`](https://arxiv.org/html/2403.02525v1); [Wu & Öz 2026, `arXiv:2606.00720v1`](https://arxiv.org/html/2606.00720v1); [Messias & Torres 2026, `arXiv:2509.22143v2`](https://arxiv.org/html/2509.22143v2?ref=blog.arbitrum.foundation); [Qin et al., `arXiv:2106.06389v2`](https://arxiv.org/html/2106.06389v2)) and production open-source repositories ([`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX), [`morpho-org/morpho-blue-liquidation-bot`](https://github.com/morpho-org/morpho-blue-liquidation-bot), [`0xnavarro/Aave-Liquiditor`](https://github.com/0xnavarro/Aave-Liquiditor), [`beefyfinance/beefy-contracts`](https://github.com/beefyfinance/beefy-contracts), [`mds1/multicall3`](https://github.com/mds1/multicall3)), zero-capital smart contract strategies rank from **highest efficiency / lowest latency competition** to **most latency-contested** as follows:
+Based on peer-reviewed empirical studies ([`arXiv:2606.03434v1` *Signals and Spoils*](https://arxiv.org/html/2606.03434v1); [Chitra et al. `arXiv:2403.02525v1`](https://arxiv.org/html/2403.02525v1); [Wu & Öz 2026, `arXiv:2606.00720v1`](https://arxiv.org/html/2606.00720v1); [Messias & Torres 2026, `arXiv:2509.22143v2`](https://arxiv.org/html/2509.22143v2?ref=blog.arbitrum.foundation); [Qin et al., `arXiv:2106.06389v2`](https://arxiv.org/html/2106.06389v2)) and production open-source repositories ([`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX), [`morpho-org/morpho-blue-liquidation-bot`](https://github.com/morpho-org/morpho-blue-liquidation-bot), [`0xnavarro/Aave-Liquiditor`](https://github.com/0xnavarro/Aave-Liquiditor), [`beefyfinance/beefy-contracts`](https://github.com/beefyfinance/beefy-contracts), [`mds1/multicall3`](https://github.com/mds1/multicall3)), the zero-capital smart contract strategies surveyed in the literature rank from **highest efficiency / lowest latency competition** to **most latency-contested** as follows. The margins below are literature-reported figures, not results measured by this suite — in this suite's own live checks (see the headline finding above), no route on the current pool universe cleared the expected-value gate:
 
-| Strategy Lane | Upfront Capital Needed | Typical Gross Margin per Execution | Latency & Competition Profile | Implemented Module in v3.5 |
+| Strategy Lane | Upfront Capital Needed | Typical Gross Margin per Execution | Latency & Competition Profile | Implemented Module in v3.6 |
 | :--- | :--- | :--- | :--- | :--- |
 | **1. Cross-Chain Speculative OEV Liquidations** ([`arXiv:2606.03434v1`](https://arxiv.org/html/2606.03434v1) Optimism-Leads-Arbitrum) | **$0 principal** (Flash-loaned via Balancer V2 / Morpho Blue; ~$15–$25 ETH gas buffer) | **5.0% – 10.0%** full liquidation bonus (no Chainlink SVR cut on L2s per [Compound DAO](https://www.comp.xyz/t/oev-rfp-process-update-july-2025/6945)) | **~6,000ms Cross-Chain Lead Window**: Optimism Chainlink updates up to 6s before Arbitrum, neutralizing ~200ms geographic latency. | `bot/cross_chain_oev_monitor.py` & `bot/liquidation_and_keeper_scanner.py` |
 | **2. Zero-Capital UniswapX Dutch-Auction Intent Filling** ([`Uniswap/UniswapX`](https://github.com/Uniswap/UniswapX) & [`arXiv:2403.02525v1`](https://arxiv.org/html/2403.02525v1)) | **$0 principal & 0% flash-loan fee** (`reactorCallback` receives user's `inputToken` upfront) | **0.05% – 0.35%** Dutch decay surplus over on-chain DEX routing | **Auction-decay driven (Medium latency)**: Profitable at the exact block timestamp where `requiredOutput` decays below `Multicall3` DEX output. | `bot/uniswapx_filler_evaluator.py` & `contracts/FlashLoanArbitrage.sol` (`reactorCallback`) |
@@ -63,9 +65,9 @@ Operating flash-loan arbitrage, speculative OEV liquidation, intent-filling, or 
 
 ---
 
-## 4. Quickstart: Offline Validation, 31-Test Suite & Paper-Trading Logger
+## 4. Quickstart: Offline Validation, 38-Test Suite & Paper-Trading Logger
 
-### Step 1 — Run the Full 31-Test Automated Verification Suite
+### Step 1 — Run the Full 38-Test Automated Verification Suite
 ```bash
 bash scripts/run_bot.sh
 ```
@@ -73,6 +75,7 @@ This runs:
 - `python3 bot/opportunity_scanner.py --validate-only` (offline schema, checksum, placeholder, and pair-orientation check)
 - `python3 -m unittest tests/test_remediation_suite.py -v` (23 tests verifying Findings 1–10 + v3.4/v3.5 Multicall3, NodeInterface gas, Aave V3 liquidations, keeper bounties, persistence scoring, Cross-Chain Speculative OEV, and UniswapX / V4 callbacks)
 - `python3 -m unittest tests/test_suite_v3.py -v` (8 tests verifying mathematical & static Solidity invariants)
+- `python3 -m unittest tests/test_profitability_improvements.py -v` (7 tests verifying the v3.6 optimal sizing, zero-fee flash-loan selection, and expected-value execution gate)
 - `python3 bot/scanner_stub.py` (deterministic pinned-block read-only scan output with `Multicall3` batching)
 
 ### Step 2 — Run a Live Read-Only Pinned-Block Scan on Arbitrum One
